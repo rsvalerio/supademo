@@ -14,6 +14,11 @@ supabase/.branches/
 supabase/.temp/
 supabase/logs/
 
+# The pinned CLI binary, fetched on first use by ./supa. Cached rather than
+# committed: it is ~110 MB per platform, and the checksum in scripts/_cli.sh is
+# what actually pins it.
+.supabase-cli/
+
 # editors / os
 .DS_Store
 .idea/

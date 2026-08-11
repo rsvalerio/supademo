@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# The Supabase CLI, with nothing to install first.
+#
+#   ./supa start
+#   ./supa db reset
+#   ./supa db query "select * from api.plans"
+#
+# On first use this downloads the pinned CLI binary into .supabase-cli/ and
+# verifies its checksum. Everything after that is the real CLI, unmodified —
+# every flag and subcommand works exactly as documented upstream.
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/_cli.sh"
+exec "$SUPABASE" "$@"

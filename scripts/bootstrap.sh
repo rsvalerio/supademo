@@ -10,11 +10,14 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_cli.sh"
 
 step "Checking prerequisites"
+# Docker is the only thing that has to exist beforehand, and it is unavoidable:
+# the local stack IS containers, and something has to run them.
 if ! docker info >/dev/null 2>&1; then
-  fail "Docker is not running. The CLI needs it to boot the local stack."
+  fail "Docker is not running. It is the one prerequisite — the local stack is
+a set of containers, and the CLI needs a daemon to drive."
 fi
 echo "Docker           ok"
-echo "Supabase CLI     $(supa --version 2>/dev/null || echo unknown)  ($SUPABASE)"
+echo "Supabase CLI     $(supa --version 2>/dev/null || echo unknown)  (pinned, vendored)"
 
 # The CLI reads env() references in config.toml from the process environment,
 # so .env has to exist before `supabase start`.
@@ -66,11 +69,12 @@ cat <<EOF
                  password: supademo123!
 
   Try it:
-    npm run test:db                     pgTAP suite
-    npm run db:advisors                 security + performance lints
-    npm run db:query "select * from api.plans"
+    ./x test                            pgTAP suite
+    ./x advisors                        security + performance lints
+    ./x query "select * from api.plans"
     curl "${API_URL:-http://127.0.0.1:54321}/rest/v1/plans?select=id,name,price_cents" \\
       -H "apikey: \$ANON_KEY"
 
+  All tasks: ./x help     ·     Raw CLI: ./supa <command>
   Full command tour: docs/supabase-cli.md
 EOF

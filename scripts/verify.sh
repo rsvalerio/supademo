@@ -24,14 +24,12 @@ supa db advisors --local --type performance --level warn --fail-on none
 step "pgTAP suite"
 supa test db --local
 
+# deno_run uses a local deno if there is one and the official image otherwise,
+# so this needs no toolchain either.
 step "Edge functions"
-if command -v deno >/dev/null 2>&1; then
-  deno fmt --check supabase/functions
-  deno lint supabase/functions
-  deno check supabase/functions/*/index.ts
-else
-  warn "deno not installed; skipping edge function checks"
-fi
+deno_run fmt --check supabase/functions
+deno_run lint supabase/functions
+deno_run check supabase/functions/*/index.ts
 
 step "Generated types are current"
 bash scripts/gen-types.sh

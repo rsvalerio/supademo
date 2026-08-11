@@ -16,42 +16,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pinned to the same version package.json installs, so a CLI upgrade is a
-      # deliberate commit rather than a Tuesday morning surprise.
-      - uses: supabase/setup-cli@v1
+      # No setup-cli action: ./supa fetches the pinned, checksum-verified CLI
+      # itself. CI therefore runs the identical resolution path as a laptop, so
+      # "works on my machine" and "works in CI" cannot diverge over tooling.
+      - name: Cache the pinned CLI
+        uses: actions/cache@v4
         with:
-          version: 2.113.0
+          path: .supabase-cli
+          key: supabase-cli-${{ runner.os }}-${{ hashFiles('scripts/_cli.sh') }}
 
       # Boots Postgres, GoTrue, Storage, Realtime and the edge runtime, applies
       # every migration in order, then the seed files. A migration that only
       # works against an already-migrated database fails right here.
       - name: Start the local stack
-        run: supabase start
+        run: ./supa start
 
       - name: Verify migrations apply to a clean database
-        run: supabase db reset
+        run: ./supa db reset
 
       - name: Lint the schema
-        run: supabase db lint --local --level warning --fail-on warning
+        run: ./supa db lint --local --level warning --fail-on warning
 
       # The same checks the dashboard's Security and Performance Advisors run:
       # tables without RLS, SECURITY DEFINER views, functions with a mutable
       # search_path, unindexed foreign keys. Security failures block; the
       # performance ones are reported and left to judgement.
       - name: Security advisors
-        run: supabase db advisors --local --type security --level warn --fail-on error
+        run: ./supa db advisors --local --type security --level warn --fail-on error
 
       - name: Performance advisors
-        run: supabase db advisors --local --type performance --level warn --fail-on none
+        run: ./supa db advisors --local --type performance --level warn --fail-on none
 
       - name: Run pgTAP tests
-        run: supabase test db --local
+        run: ./supa test db --local
 
       # A committed types file that no longer matches the schema is worse than
       # no types file: it type-checks against a database that does not exist.
       - name: Check generated types are current
         run: |
-          supabase gen types --local --schema public,api \
+          ./supa gen types --local --schema public,api \
             > packages/db-types/src/database.types.ts
           if ! git diff --quiet -- packages/db-types/src/database.types.ts; then
             echo "::error::packages/db-types is stale. Run 'npm run gen:types' and commit."
@@ -61,7 +64,7 @@ jobs:
 
       - name: Stop the stack
         if: always()
-        run: supabase stop
+        run: ./supa stop
 
   functions:
     name: Edge functions
@@ -69,21 +72,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
+      # ./x fmt and ./x check use a local deno when there is one and the
+      # official image otherwise, so no setup action is needed here either.
       - name: Format
-        run: deno fmt --check supabase/functions
+        run: ./x fmt --check
 
-      - name: Lint
-        run: deno lint supabase/functions
-
-      - name: Type check
-        run: deno check supabase/functions/*/index.ts
-        env:
-          # The functions import npm: specifiers; let Deno resolve them.
-          DENO_NO_PACKAGE_JSON: 1
+      - name: Lint and type check
+        run: ./x check
 
   security:
     name: Policy invariants

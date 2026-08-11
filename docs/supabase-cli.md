@@ -4,25 +4,58 @@ Everything in this repository runs through the CLI. There is no bespoke tooling
 to learn, no hand-rolled migration runner, and no `psql` in any script — if you
 know the CLI, you know this project.
 
-The CLI is a **pinned devDependency**, not a global install, so everyone runs
-the same version:
+## The only prerequisite is Docker
 
-```json
-"devDependencies": { "supabase": "2.113.0" }
+Not Node, not npm, not a globally installed CLI, not Postgres client tools.
+
+```bash
+git clone … && cd supademo
+./x setup
 ```
 
-`npm install` is the only setup step besides Docker. `npm run <script>` puts
-`node_modules/.bin` on PATH, so the scripts call `supabase` directly;
-`scripts/_cli.sh` finds the same binary when a script is run by hand.
+`./supa` resolves the CLI on first use: it downloads the pinned version from the
+npm registry over plain HTTPS, checks its SHA-512 against the table in
+`scripts/_cli.sh`, and caches it in `.supabase-cli/` (gitignored). About three
+seconds, once. After that it is the real CLI, unmodified — every flag and
+subcommand behaves exactly as documented upstream.
+
+```bash
+./supa <any supabase command>    # the CLI itself
+./x <task>                       # the handful of composite tasks
+./x help                         # what those tasks are
+```
+
+`npm run …` still works for the same tasks, but only as an alias — Node is not
+needed for anything on the backend.
+
+### Why not run the CLI in a container too?
+
+It is the obvious question, since Docker is required anyway. Three things make
+it a worse trade than a pinned binary:
+
+1. **It needs the Docker socket.** The CLI's whole job is starting containers,
+   so a containerised CLI needs `/var/run/docker.sock` mounted — Docker-out-of-
+   Docker, with the privilege that implies.
+2. **Paths stop matching.** The CLI passes host paths to the daemon when it
+   bind-mounts your migrations and functions into the stack. Inside a container
+   those paths are its own, so the project must be mounted at its *own absolute
+   path* to keep the two views aligned.
+3. **Networking.** After `start`, the CLI connects to `127.0.0.1:54322` — which
+   inside a container is that container's loopback, not the host's. It needs
+   host networking, which is fine on Linux and opt-in on Docker Desktop.
+
+A checksum-pinned binary gives the same reproducibility with none of that. Where
+a container genuinely is the right answer — Deno, which needs nothing from the
+host but the source tree — that is exactly what `./x fmt` and `./x check` do:
+use a local `deno` if there is one, otherwise `docker run denoland/deno`.
+
+So the floor is: **Docker, a POSIX shell, `curl` and `tar`.** Docker is
+irreducible (the local stack *is* containers); the rest ship with macOS and
+every Linux distribution. On Windows, use WSL.
 
 ## Getting started
 
-```bash
-npm install
-npm run setup
-```
-
-`npm run setup` (`scripts/bootstrap.sh`) is a thin sequence of CLI calls:
+`./x setup` (`scripts/bootstrap.sh`) is a thin sequence of CLI calls:
 
 | Step | Command | What it does |
 | --- | --- | --- |
@@ -68,56 +101,58 @@ Two things worth understanding, because they explain most confusion:
 
 ## Everyday commands
 
+`./x` covers the composite tasks; anything else is `./supa <command>`.
+
 Stack:
 
 ```bash
-npm start              # supabase start
-npm stop               # supabase stop           (keeps the data volume)
-npm run stop:clean     # supabase stop --no-backup  (throws the data away)
-npm run status         # URLs and keys
-npm run status:json    # the same, machine-readable
-npm run services       # image versions, local vs hosted
+./x start                     # boot the local stack
+./x stop                      # shut it down, keeping the data volume
+./x status                    # URLs and keys
+./supa stop --no-backup       # shut down and throw the data away
+./supa status -o env          # the same status, shell-shaped
+./supa services               # image versions, local vs hosted
 ```
 
 Schema:
 
 ```bash
-npm run db:new add_widgets   # supabase migration new — creates a timestamped file
-npm run db:reset             # replay everything + seed
-npm run db:list              # local vs remote migration history
-npm run db:up                # apply only what is pending (rarely what you want)
-npm run db:diff my_change    # capture Studio edits as a migration file
-npm run db:dump              # snapshot the current schema to supabase/schema.sql
+./x new add_widgets           # supabase migration new — a timestamped file
+./x reset                     # replay every migration from empty, then seed
+./supa migration list         # local vs remote migration history
+./supa migration up           # apply only what is pending (rarely what you want)
+./supa db diff -f my_change   # capture Studio edits as a migration
+./supa db dump --local -f supabase/schema.sql
 ```
 
 Checks:
 
 ```bash
-npm run db:lint        # typing errors in functions and views
-npm run db:advisors    # the dashboard's Security + Performance advisors
-npm run db:inspect     # table stats; see `supabase inspect db --help` for more
-npm run test:db        # the pgTAP suite
-npm run test:new name  # scaffold a new pgTAP test file
-npm run verify         # everything CI runs
+./x lint                      # typing errors in functions and views
+./x advisors                  # the dashboard's Security + Performance advisors
+./x test                      # the pgTAP suite
+./x verify                    # everything CI runs
+./supa test new my_test       # scaffold a pgTAP test file
+./supa inspect db table-stats --local
 ```
 
-`db:advisors` is the one people miss. It runs the same checks as the dashboard's
-Security Advisor — tables without RLS, `SECURITY DEFINER` views, functions with
-a mutable `search_path`, unindexed foreign keys — and CI fails on any security
-finding at error level.
+`./x advisors` is the one people miss. It runs the same checks as the
+dashboard's Security Advisor — tables without RLS, `SECURITY DEFINER` views,
+functions with a mutable `search_path`, unindexed foreign keys — and CI fails on
+any security finding at error level.
 
-Ad-hoc SQL, without needing a Postgres client installed:
+Ad-hoc SQL, without a Postgres client installed:
 
 ```bash
-npm run db:query "select id, name, price_cents from api.plans order by sort_order"
-npm run db:query -- --file supabase/tests/00_structure.test.sql
+./x query "select id, name, price_cents from api.plans order by sort_order"
+./supa db query --local --file some-script.sql
 ```
 
 Types:
 
 ```bash
-npm run gen:types          # TypeScript, from the local stack
-npm run gen:types:swift    # the same schema as Swift, for a future mobile app
+./x types                     # TypeScript, from the local stack
+./supa gen types --local --lang swift --schema public,api
 ```
 
 `supabase gen types` also speaks Go and Python. The schema is the interface, so
@@ -126,22 +161,37 @@ each client generates its own binding rather than sharing a hand-written one.
 Edge functions:
 
 ```bash
-npm run functions:serve         # serve all of them, hot-reloading
-npm run functions:new my-fn     # scaffold one
-npm run functions:list          # what is deployed
-npm run functions:deploy        # deploy all (respects verify_jwt per function)
+./x serve                     # serve all of them, hot-reloading
+./x fmt                       # format (--check to verify only)
+./x check                     # lint + typecheck
+./supa functions new my-fn    # scaffold one
+./supa functions list         # what is deployed
+./x deploy                    # deploy all (respects verify_jwt per function)
 ```
 
 Hosted project:
 
 ```bash
-npm run link -- --project-ref abcdefgh
-npm run db:push        # apply migrations to the linked project
-npm run db:pull        # capture remote drift as a migration
-npm run config:push    # push config.toml (auth settings, API config)
-npm run secrets:set    # upload supabase/functions/.env.local as function secrets
-npm run secrets:list
+./supa link --project-ref abcdefgh
+./supa db push --linked       # apply migrations to the linked project
+./supa db pull --linked       # capture remote drift as a migration
+./supa config push            # push config.toml (auth settings, API config)
+./supa secrets set --env-file supabase/functions/.env.local
+./supa secrets list
 ```
+
+## Upgrading the CLI
+
+The version and its per-platform checksums live in `scripts/_cli.sh`:
+
+```bash
+bash scripts/update-cli.sh 2.114.0
+rm -rf .supabase-cli && ./supa --version
+```
+
+That rewrites the pin from the registry's own integrity hashes, so a CLI upgrade
+is a reviewable diff rather than a silent "latest" that behaves differently on
+your laptop than in CI.
 
 ## Where files live, and what resolves relative to what
 
@@ -218,11 +268,11 @@ CI does this on merge (`.github/workflows/deploy.yml`), but by hand it is:
 
 ```bash
 export SUPABASE_PROJECT_REF=abcdefgh
-npm run link -- --project-ref "$SUPABASE_PROJECT_REF"
-npm run db:list          # confirm what is about to run
-npm run db:push
-npm run secrets:set
-npm run functions:deploy
+./supa link -- --project-ref "$SUPABASE_PROJECT_REF"
+./supa migration list          # confirm what is about to run
+./supa db push --linked
+./supa secrets set --env-file supabase/functions/.env.local
+./x deploy
 bash scripts/bootstrap-secrets.sh --linked   # Vault entries for pg_cron
 ```
 

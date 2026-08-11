@@ -69,27 +69,32 @@ dropped in later without moving anything.
 
 ## Quick start
 
-Docker and Node 20+ are the only prerequisites; the Supabase CLI is a pinned
-devDependency, so `npm install` gets you the same version everyone else runs.
+**Docker is the only prerequisite.** No Node, no npm, no globally installed
+Supabase CLI, no Postgres client tools.
 
 ```bash
-npm install
-npm run setup     # start the stack, apply migrations, seed, generate types
+./x setup
 ```
 
-That is one script wrapping `supabase start`, `supabase db reset`,
-`supabase db query` and `supabase gen types`. It finishes by printing the local
+`./supa` fetches the pinned CLI on first use — a checksum-verified binary from
+the npm registry, cached in `.supabase-cli/` — then `./x setup` runs
+`supabase start`, `db reset`, `db query` and `gen types`, and prints the local
 URLs, keys and seeded logins.
 
 ```bash
-npm run test:db      # pgTAP suite
-npm run db:advisors  # the dashboard's security + performance lints
-npm run verify       # everything CI runs
+./x test        # pgTAP suite
+./x advisors    # the dashboard's security + performance lints
+./x verify      # everything CI runs
+./x help        # every task
+./supa <cmd>    # the CLI itself, unmodified
 ```
 
-Everything here goes through the Supabase CLI — there is no `psql` in any
-script and no bespoke migration tooling.
-[`docs/supabase-cli.md`](docs/supabase-cli.md) is the command tour;
+CI runs the same `./supa` resolver rather than an install action, so tooling
+cannot drift between a laptop and a build agent.
+
+Everything here goes through the Supabase CLI — no `psql`, no bespoke migration
+tooling. [`docs/supabase-cli.md`](docs/supabase-cli.md) is the command tour and
+explains why the CLI is pinned rather than containerised;
 [`docs/local-development.md`](docs/local-development.md) is the daily loop;
 [`docs/roadmap.md`](docs/roadmap.md) covers how frontends slot in.
 

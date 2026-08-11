@@ -2,25 +2,28 @@
 
 ## Prerequisites
 
-- Docker (the local stack is a set of containers the CLI manages)
-- Node 20+
-- Deno 2 — optional, only for linting and type-checking edge functions
+**Docker.** That is the list.
 
-You do **not** need Postgres, `psql`, or a globally installed Supabase CLI. The
-CLI is a pinned devDependency and everything goes through it.
+The local stack is a set of containers, so a container runtime is irreducible.
+Everything else the project needs — the Supabase CLI, and Deno for the edge
+functions — is fetched on demand: the CLI as a checksum-pinned binary cached in
+`.supabase-cli/`, Deno via its official image when it is not already installed.
+
+You do **not** need Node, npm, a global Supabase CLI, Postgres, or `psql`.
+(Node only becomes relevant when a frontend lands in `apps/`.) On Windows, run
+this from WSL.
 
 ## First run
 
 ```bash
-npm install
-npm run setup
+./x setup
 ```
 
-`npm run setup` checks Docker, creates `.env`, boots the stack
-(`supabase start`), applies every migration and seed file (`supabase db reset`),
-seeds the Vault entries scheduled jobs need, generates types, and prints
-everything below. See [`supabase-cli.md`](supabase-cli.md) for the full command
-tour.
+That checks Docker, creates `.env`, boots the stack (`supabase start`), applies
+every migration and seed file (`supabase db reset`), seeds the Vault entries
+scheduled jobs need, generates types, and prints everything below.
+`./x help` lists the tasks; `./supa <command>` is the raw CLI. See
+[`supabase-cli.md`](supabase-cli.md) for the full tour.
 
 The important local URLs:
 
@@ -33,7 +36,7 @@ The important local URLs:
 
 Every auth email lands in Inbucket. Nothing is sent to a real address locally.
 
-`npm run status` reprints these at any time; `npm run status:json` gives the
+`./x status` reprints these at any time; `./supa status -o env` gives the
 same thing machine-readably, which is how the scripts read the anon and service
 keys.
 
@@ -63,48 +66,48 @@ reset.
 
 ```bash
 # 1. Write a migration
-npm run db:new add_widget_table
+./x new add_widget_table
 
 # 2. Apply it from scratch — always from scratch, never incrementally
-npm run db:reset
+./x reset
 
 # 3. Regenerate types and run the checks
-npm run gen:types
-npm run test:db
-npm run db:advisors
+./x types
+./x test
+./x advisors
 ```
 
 `db:reset` re-runs everything from empty. That is the point: it is the only way
 to catch a migration that happens to work against your database but not against
 a new one.
 
-If you prefer to explore in Studio first, `npm run db:diff add_widget_table`
+If you prefer to explore in Studio first, `./supa db diff -f add_widget_table`
 writes the changes you made by hand into a migration file. Read it before
 committing — the diff tool captures what changed, not what you meant.
 
 ## Useful commands
 
 ```bash
-npm run verify           # everything CI runs
-npm run db:lint          # typing errors in functions and views
-npm run db:advisors      # the dashboard's Security + Performance advisors
-npm run db:list          # local vs remote migration history
-npm run db:inspect       # table stats (see `supabase inspect db --help` for more)
-npm run test:db          # pgTAP suite
-npm run functions:serve  # serve all edge functions on :54321/functions/v1
-npm run status           # local URLs and keys
+./x verify           # everything CI runs
+./x lint          # typing errors in functions and views
+./x advisors      # the dashboard's Security + Performance advisors
+./supa migration list          # local vs remote migration history
+./supa inspect db table-stats --local       # table stats (see `supabase inspect db --help` for more)
+./x test          # pgTAP suite
+./x serve  # serve all edge functions on :54321/functions/v1
+./x status           # local URLs and keys
 ```
 
 Ad-hoc SQL without a Postgres client installed:
 
 ```bash
-npm run db:query "select id, name, price_cents from api.plans order by sort_order"
+./x query "select id, name, price_cents from api.plans order by sort_order"
 ```
 
 ## Edge functions
 
 ```bash
-npm run functions:serve
+./x serve
 ```
 
 That creates `supabase/functions/.env.local` from `.env.example` on first run —
@@ -124,7 +127,7 @@ curl http://127.0.0.1:54321/functions/v1/health
 # The share endpoint (demoacme002 is seeded, shared by link)
 curl 'http://127.0.0.1:54321/functions/v1/public-demo?id=demoacme002'
 
-# Authenticated — the anon key comes from `npm run status`
+# Authenticated — the anon key comes from `./x status`
 curl -X POST http://127.0.0.1:54321/functions/v1/embed-document \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
   -H 'Content-Type: application/json' \
@@ -144,11 +147,11 @@ PL/pgSQL body, which is not name-resolved until it runs.
 Check what you actually got:
 
 ```bash
-npm run db:query "select extname from pg_extension order by 1"
-npm run db:query "select app.extension_enabled('pgmq')"
+./x query "select extname from pg_extension order by 1"
+./x query "select app.extension_enabled('pgmq')"
 ```
 
-`npm run setup` already seeds the two Vault secrets `pg_cron` needs to call an
+`./x setup` already seeds the two Vault secrets `pg_cron` needs to call an
 edge function. To redo it after a reset:
 
 ```bash
@@ -163,13 +166,13 @@ verification) are on by default and need no setup. Check the claims your token
 actually carries:
 
 ```bash
-npm run db:query "select auth_hooks.custom_access_token(jsonb_build_object(
+./x query "select auth_hooks.custom_access_token(jsonb_build_object(
   'user_id', '00000000-0000-4000-a000-000000000001', 'claims', '{}'::jsonb))"
 ```
 
 The Send Email hook ships **disabled**. Enabling it without a deployed function
 stops auth email entirely. To turn it on: set `AUTH_HOOK_SECRET`, run
-`npm run functions:serve`, then flip `enabled = true` under
+`./x serve`, then flip `enabled = true` under
 `[auth.hook.send_email]` and restart the stack.
 
 ## Troubleshooting
@@ -182,8 +185,8 @@ have already pushed, write a new migration.
 policy for that role. Studio's Table Editor shows both, or:
 
 ```bash
-npm run db:query "select grantee, privilege_type from information_schema.role_table_grants where table_name = 'X'"
-npm run db:query "select policyname, cmd, roles, qual from pg_policies where tablename = 'X'"
+./x query "select grantee, privilege_type from information_schema.role_table_grants where table_name = 'X'"
+./x query "select policyname, cmd, roles, qual from pg_policies where tablename = 'X'"
 ```
 
 **`new row violates row-level security policy`** — the `WITH CHECK` failed. The
@@ -194,12 +197,12 @@ or wrong `organization_id`.
 has to be subscribed to the right topic. Broadcast topics are `org:<uuid>`; the
 RLS policy on `realtime.messages` rejects anything else.
 
-**Types look stale.** They are. `npm run gen:types` after every migration; CI
+**Types look stale.** They are. `./x types` after every migration; CI
 fails on a stale file.
 
-**Port already in use.** Another project's stack is running. `npx supabase stop
+**Port already in use.** Another project's stack is running. `./supa stop
 --project-id <other>` stops it, or change the ports in `config.toml`.
 
-**A container will not come up.** `npm run status` shows what is missing and
-`npm run services` shows image versions. `npm run stop:clean` throws the data
+**A container will not come up.** `./x status` shows what is missing and
+`./supa services` shows image versions. `./supa stop --no-backup` throws the data
 volume away and starts over — the seed makes that cheap.
