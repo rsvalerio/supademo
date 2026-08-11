@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+.turbo/
+
+# env
+.env
+.env.*
+!.env.example
+supabase/functions/.env.local
+
+# supabase cli
+supabase/.branches/
+supabase/.temp/
+supabase/logs/
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# deno
+deno.lock

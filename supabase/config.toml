@@ -1,0 +1,204 @@
+# Supademo — local stack + hosted project configuration.
+# Docs: https://supabase.com/docs/guides/local-development/cli/config
+#
+# `project_id` names the local Docker stack and is also the default target for
+# `supabase link`. Keep it stable; changing it orphans local volumes.
+project_id = "supademo"
+
+[api]
+enabled = true
+port = 54321
+# `api` holds curated, client-facing views. `public` holds the real tables
+# (protected by RLS). `graphql_public` exposes pg_graphql.
+schemas = ["public", "api", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+# Hard cap on rows PostgREST will return, so a missing .limit() can't page the
+# whole analytics table into a client.
+max_rows = 1000
+
+[api.tls]
+enabled = false
+
+[db]
+port = 54322
+shadow_port = 54320
+# Match the hosted project. Bump both together, never just one.
+major_version = 17
+
+[db.pooler]
+enabled = true
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+# Local mail catcher. Every auth email lands here instead of being sent.
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+# Buckets are created in migrations (see ..._storage.sql) so that the same
+# definitions apply to hosted projects via `supabase db push`. Declaring them
+# here as well would fight with those migrations.
+
+[storage.image_transformation]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "env(APP_BASE_URL)"
+additional_redirect_urls = [
+  "http://localhost:3000",
+  "http://localhost:3000/**",
+  "http://localhost:54321/**",
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = true
+enable_manual_linking = true
+minimum_password_length = 10
+# Rejects passwords found in the HaveIBeenPwned corpus.
+password_requirements = "lower_upper_letters_digits"
+
+[auth.rate_limit]
+email_sent = 10
+sms_sent = 10
+anonymous_users = 30
+token_refresh = 150
+sign_in_sign_ups = 30
+token_verifications = 30
+
+[auth.sessions]
+# Absolute session lifetime and idle timeout. Both are enforced by GoTrue.
+timebox = "24h"
+inactivity_timeout = "8h"
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = true
+max_frequency = "1m"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.email.template.invite]
+subject = "You've been invited to a Supademo workspace"
+content_path = "./templates/invite.html"
+
+[auth.email.template.magic_link]
+subject = "Your Supademo sign-in link"
+content_path = "./templates/magic_link.html"
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.external.github]
+enabled = true
+client_id = "env(SUPABASE_AUTH_GITHUB_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GITHUB_SECRET)"
+skip_nonce_check = false
+
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+
+# --- Auth hooks -------------------------------------------------------------
+# Postgres-backed hooks need no extra infrastructure, so they are on by default.
+
+# Injects organization membership + entitlements into every access token, so
+# RLS and clients can read them without an extra round trip.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/auth_hooks/custom_access_token"
+
+# Records failed sign-in attempts for the security timeline.
+[auth.hook.password_verification_attempt]
+enabled = true
+uri = "pg-functions://postgres/auth_hooks/password_verification_attempt"
+
+# Records MFA challenge outcomes.
+[auth.hook.mfa_verification_attempt]
+enabled = true
+uri = "pg-functions://postgres/auth_hooks/mfa_verification_attempt"
+
+# Takes over ALL transactional auth email. Enable once the function is deployed
+# and AUTH_HOOK_SECRET is set, otherwise auth email stops working.
+[auth.hook.send_email]
+enabled = false
+uri = "http://host.docker.internal:54321/functions/v1/auth-email-hook"
+secrets = "env(AUTH_HOOK_SECRET)"
+
+[edge_runtime]
+enabled = true
+# "oneshot" restarts the worker on file change — right for local dev.
+# "per_worker" mirrors production isolation; use it for load testing.
+policy = "oneshot"
+inspector_port = 8083
+deno_version = 2
+
+# --- Edge functions ---------------------------------------------------------
+# `verify_jwt = true` (the default) makes the platform reject calls without a
+# valid Supabase JWT. Turn it off only for endpoints that do their own auth.
+
+[functions.health]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.auth-email-hook]
+verify_jwt = false
+
+[functions.public-demo]
+verify_jwt = false
+
+[functions.billing-portal]
+verify_jwt = true
+
+[functions.embed-document]
+verify_jwt = true
+
+[functions.queue-worker]
+verify_jwt = true
+
+[functions.usage-rollup]
+verify_jwt = true
+
+# Self-hosted analytics/log explorer. Costs a few extra containers locally, so
+# it is opt-in.
+[analytics]
+enabled = false
+port = 54327
+backend = "postgres"

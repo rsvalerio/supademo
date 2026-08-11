@@ -1,0 +1,15 @@
+{
+  "name": "@supademo/db-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Types generated from the Supabase schema. Do not edit by hand.",
+  "type": "module",
+  "main": "./src/database.types.ts",
+  "types": "./src/database.types.ts",
+  "exports": {
+    ".": "./src/database.types.ts"
+  },
+  "scripts": {
+    "generate": "bash ../../scripts/gen-types.sh"
+  }
+}

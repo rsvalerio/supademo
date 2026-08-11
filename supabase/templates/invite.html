@@ -1,0 +1,22 @@
+<!-- Rendered by GoTrue. Available vars: {{ .ConfirmationURL }}, {{ .Token }},
+     {{ .TokenHash }}, {{ .SiteURL }}, {{ .Email }}, {{ .Data }} (user metadata). -->
+<div style="font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #18181b;">
+  <h1 style="font-size: 20px; margin: 0 0 16px;">You've been invited to Supademo</h1>
+  <p style="font-size: 15px; line-height: 1.6; margin: 0 0 24px; color: #3f3f46;">
+    Someone invited <strong>{{ .Email }}</strong> to collaborate on a Supademo
+    workspace. Accept the invite to create your account.
+  </p>
+  <p style="margin: 0 0 24px;">
+    <a href="{{ .ConfirmationURL }}"
+       style="display: inline-block; background: #18181b; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 15px;">
+      Accept invitation
+    </a>
+  </p>
+  <p style="font-size: 13px; line-height: 1.6; color: #71717a; margin: 0;">
+    If the button doesn't work, paste this link into your browser:<br />
+    <span style="word-break: break-all;">{{ .ConfirmationURL }}</span>
+  </p>
+  <p style="font-size: 13px; color: #a1a1aa; margin: 24px 0 0;">
+    Didn't expect this? You can safely ignore this email.
+  </p>
+</div>

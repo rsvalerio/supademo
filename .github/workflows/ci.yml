@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database:
+    name: Migrations, lint and pgTAP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Boots Postgres, GoTrue, Storage, Realtime and the edge runtime, applies
+      # every migration in order, then runs seed.sql. A migration that only
+      # works against an already-migrated database fails right here.
+      - name: Start the local stack
+        run: supabase start
+
+      - name: Verify migrations apply to a clean database
+        run: supabase db reset
+
+      - name: Lint the schema
+        run: supabase db lint --level warning --fail-on warning
+
+      - name: Run pgTAP tests
+        run: supabase test db
+
+      # A committed types file that no longer matches the schema is worse than
+      # no types file: it type-checks against a database that does not exist.
+      - name: Check generated types are current
+        run: |
+          supabase gen types typescript --local --schema public,api \
+            > packages/db-types/src/database.types.ts
+          if ! git diff --quiet -- packages/db-types/src/database.types.ts; then
+            echo "::error::packages/db-types is stale. Run 'npm run gen:types' and commit."
+            git diff --stat -- packages/db-types/src/database.types.ts
+            exit 1
+          fi
+
+      - name: Stop the stack
+        if: always()
+        run: supabase stop
+
+  functions:
+    name: Edge functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Format
+        run: deno fmt --check supabase/functions
+
+      - name: Lint
+        run: deno lint supabase/functions
+
+      - name: Type check
+        run: deno check supabase/functions/*/index.ts
+        env:
+          # The functions import npm: specifiers; let Deno resolve them.
+          DENO_NO_PACKAGE_JSON: 1
+
+  security:
+    name: Policy invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cheap, fast, and catches the mistake that matters most: a new table with
+      # no RLS. The pgTAP suite asserts the same thing against the live schema;
+      # this is the grep-level backstop for a migration that never got applied.
+      - name: Every new table enables RLS
+        run: |
+          missing=0
+          for file in supabase/migrations/*.sql; do
+            while read -r table; do
+              if ! grep -qi "alter table $table enable row level security" supabase/migrations/*.sql; then
+                echo "::error file=$file::public.$table never enables row level security"
+                missing=1
+              fi
+            done < <(grep -oiP '(?<=create table )public\.\w+' "$file" || true)
+          done
+          exit $missing
+
+      - name: No service role key in tracked files
+        run: |
+          if grep -rInE 'service_role.*ey[JI]|SUPABASE_SERVICE_ROLE_KEY *= *ey' \
+               --exclude-dir=.git --exclude='*.example' . ; then
+            echo "::error::A service role key looks committed."
+            exit 1
+          fi
