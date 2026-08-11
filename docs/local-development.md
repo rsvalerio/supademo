@@ -2,22 +2,27 @@
 
 ## Prerequisites
 
-- Docker (the local stack is a set of containers)
+- Docker (the local stack is a set of containers the CLI manages)
 - Node 20+
 - Deno 2 — optional, only for linting and type-checking edge functions
+
+You do **not** need Postgres, `psql`, or a globally installed Supabase CLI. The
+CLI is a pinned devDependency and everything goes through it.
 
 ## First run
 
 ```bash
 npm install
-cp .env.example .env
-
-npm run db:start     # boots Postgres, GoTrue, Storage, Realtime, the edge runtime
-npm run db:reset     # applies every migration in order, then seed.sql
-npm run gen:types    # writes packages/db-types/src/database.types.ts
+npm run setup
 ```
 
-`npm run db:start` prints the local URLs and keys. The important ones:
+`npm run setup` checks Docker, creates `.env`, boots the stack
+(`supabase start`), applies every migration and seed file (`supabase db reset`),
+seeds the Vault entries scheduled jobs need, generates types, and prints
+everything below. See [`supabase-cli.md`](supabase-cli.md) for the full command
+tour.
+
+The important local URLs:
 
 | Service | URL |
 | --- | --- |
@@ -27,6 +32,10 @@ npm run gen:types    # writes packages/db-types/src/database.types.ts
 | Inbucket (mail catcher) | http://127.0.0.1:54324 |
 
 Every auth email lands in Inbucket. Nothing is sent to a real address locally.
+
+`npm run status` reprints these at any time; `npm run status:json` gives the
+same thing machine-readably, which is how the scripts read the anon and service
+keys.
 
 ## Seeded accounts
 
@@ -46,25 +55,30 @@ Also seeded: a pending invitation to `alan@supademo.test` for Acme, whose raw
 token is literally `seed-invite-token`, and about 180 viewing sessions spread
 over 30 days so the analytics RPCs return something with a shape.
 
+Fixtures live in `supabase/seeds/*.sql` and are applied in filename order by
+`supabase db reset`. Drop a new numbered file in and it is picked up on the next
+reset.
+
 ## The loop
 
 ```bash
 # 1. Write a migration
-npx supabase migration new add_widget_table
+npm run db:new add_widget_table
 
 # 2. Apply it from scratch — always from scratch, never incrementally
 npm run db:reset
 
-# 3. Regenerate types and run the suite
+# 3. Regenerate types and run the checks
 npm run gen:types
 npm run test:db
+npm run db:advisors
 ```
 
 `db:reset` re-runs everything from empty. That is the point: it is the only way
 to catch a migration that happens to work against your database but not against
 a new one.
 
-If you prefer to explore in Studio first, `npm run db:diff -- add_widget_table`
+If you prefer to explore in Studio first, `npm run db:diff add_widget_table`
 writes the changes you made by hand into a migration file. Read it before
 committing — the diff tool captures what changed, not what you meant.
 
@@ -72,18 +86,30 @@ committing — the diff tool captures what changed, not what you meant.
 
 ```bash
 npm run verify           # everything CI runs
-npm run db:lint          # schema linter (unindexed FKs, missing RLS, …)
+npm run db:lint          # typing errors in functions and views
+npm run db:advisors      # the dashboard's Security + Performance advisors
+npm run db:list          # local vs remote migration history
+npm run db:inspect       # table stats (see `supabase inspect db --help` for more)
 npm run test:db          # pgTAP suite
 npm run functions:serve  # serve all edge functions on :54321/functions/v1
-npm run db:status        # local URLs and keys
+npm run status           # local URLs and keys
+```
+
+Ad-hoc SQL without a Postgres client installed:
+
+```bash
+npm run db:query "select id, name, price_cents from api.plans order by sort_order"
 ```
 
 ## Edge functions
 
 ```bash
-cp .env.example supabase/functions/.env.local   # then fill in what you need
 npm run functions:serve
 ```
+
+That creates `supabase/functions/.env.local` from `.env.example` on first run —
+the CLI refuses to start if `--env-file` points at a missing file, and that
+file is gitignored because it holds credentials.
 
 Only `RESEND_API_KEY` and the Stripe keys are worth setting locally, and only if
 you are working on those paths. Without `RESEND_API_KEY` the email paths log
@@ -98,7 +124,7 @@ curl http://127.0.0.1:54321/functions/v1/health
 # The share endpoint (demoacme002 is seeded, shared by link)
 curl 'http://127.0.0.1:54321/functions/v1/public-demo?id=demoacme002'
 
-# Authenticated — grab the anon key from `npm run db:status`
+# Authenticated — the anon key comes from `npm run status`
 curl -X POST http://127.0.0.1:54321/functions/v1/embed-document \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
   -H 'Content-Type: application/json' \
@@ -117,18 +143,17 @@ PL/pgSQL body, which is not name-resolved until it runs.
 
 Check what you actually got:
 
-```sql
-select extname from pg_extension order by 1;
-select app.extension_enabled('pgmq');
+```bash
+npm run db:query "select extname from pg_extension order by 1"
+npm run db:query "select app.extension_enabled('pgmq')"
 ```
 
-To let `pg_cron` call an edge function, seed the two Vault secrets it needs:
+`npm run setup` already seeds the two Vault secrets `pg_cron` needs to call an
+edge function. To redo it after a reset:
 
 ```bash
-psql postgresql://postgres:postgres@127.0.0.1:54322/postgres \
-  -f scripts/bootstrap-secrets.sql \
-  -v url="http://host.docker.internal:54321/functions/v1" \
-  -v key="$(npx supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
+bash scripts/bootstrap-secrets.sh            # local
+bash scripts/bootstrap-secrets.sh --linked   # a linked project
 ```
 
 ## Auth hooks
@@ -137,11 +162,9 @@ The three Postgres-backed hooks (custom access token, password verification, MFA
 verification) are on by default and need no setup. Check the claims your token
 actually carries:
 
-```sql
-select auth_hooks.custom_access_token(jsonb_build_object(
-  'user_id', '00000000-0000-4000-a000-000000000001',
-  'claims', '{}'::jsonb
-));
+```bash
+npm run db:query "select auth_hooks.custom_access_token(jsonb_build_object(
+  'user_id', '00000000-0000-4000-a000-000000000001', 'claims', '{}'::jsonb))"
 ```
 
 The Send Email hook ships **disabled**. Enabling it without a deployed function
@@ -156,8 +179,12 @@ append-only and never edited after being pushed. If you need to change one you
 have already pushed, write a new migration.
 
 **`permission denied for table X`** — a grant is missing, or RLS has no matching
-policy for that role. `\dp public.X` in psql shows the grants; `\d+ public.X`
-lists the policies.
+policy for that role. Studio's Table Editor shows both, or:
+
+```bash
+npm run db:query "select grantee, privilege_type from information_schema.role_table_grants where table_name = 'X'"
+npm run db:query "select policyname, cmd, roles, qual from pg_policies where tablename = 'X'"
+```
 
 **`new row violates row-level security policy`** — the `WITH CHECK` failed. The
 row would have been written somewhere the caller cannot see. Usually a missing
@@ -170,5 +197,9 @@ RLS policy on `realtime.messages` rejects anything else.
 **Types look stale.** They are. `npm run gen:types` after every migration; CI
 fails on a stale file.
 
-**Port already in use.** Another project's stack is running: `npx supabase stop
---project-id <other>`, or change the ports in `config.toml`.
+**Port already in use.** Another project's stack is running. `npx supabase stop
+--project-id <other>` stops it, or change the ports in `config.toml`.
+
+**A container will not come up.** `npm run status` shows what is missing and
+`npm run services` shows image versions. `npm run stop:clean` throws the data
+volume away and starts over — the seed makes that cheap.

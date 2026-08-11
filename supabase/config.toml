@@ -38,7 +38,10 @@ schema_paths = []
 
 [db.seed]
 enabled = true
-sql_paths = ["./seed.sql"]
+# Globbed and applied in filename order, so fixtures split by concern instead of
+# accumulating in one file. Anything you drop in seeds/ is picked up by the next
+# `supabase db reset`.
+sql_paths = ["./seeds/*.sql"]
 
 [realtime]
 enabled = true
@@ -57,9 +60,12 @@ port = 54324
 enabled = true
 file_size_limit = "50MiB"
 
-# Buckets are created in migrations (see ..._storage.sql) so that the same
-# definitions apply to hosted projects via `supabase db push`. Declaring them
-# here as well would fight with those migrations.
+# Buckets are created in migrations (see ..._storage.sql), not in a
+# [storage.buckets] block here. `supabase seed buckets` reads those blocks, but
+# it is local-only — a hosted project would still need the migration — and
+# declaring buckets in both places invites the two definitions to drift.
+# The migration upserts, so it is the single source of truth for every
+# environment.
 
 [storage.image_transformation]
 enabled = true
@@ -104,13 +110,15 @@ max_frequency = "1m"
 otp_length = 6
 otp_expiry = 3600
 
+# NOTE: template paths are resolved relative to the project root, unlike
+# [db.seed] sql_paths, which resolve relative to supabase/. Not a typo.
 [auth.email.template.invite]
 subject = "You've been invited to a Supademo workspace"
-content_path = "./templates/invite.html"
+content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.magic_link]
 subject = "Your Supademo sign-in link"
-content_path = "./templates/magic_link.html"
+content_path = "./supabase/templates/magic_link.html"
 
 [auth.sms]
 enable_signup = false

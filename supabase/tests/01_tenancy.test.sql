@@ -7,6 +7,16 @@
 -- Asserting from inside an impersonated session is how RLS test suites end up
 -- failing for reasons that have nothing to do with the policy under test.
 begin;
+
+-- pgTAP is test-only tooling. Creating it inside the transaction means it is
+-- rolled back with everything else, so `supabase test db` needs no setup step
+-- and no deployed database ever carries a thousand assertion functions it will
+-- never call. `search_path` covers both placements: a fresh install lands in
+-- `public`, while a project that enabled pgTAP from the dashboard has it in
+-- `extensions`.
+create extension if not exists pgtap;
+set local search_path to public, extensions;
+
 select plan(14);
 
 create or replace function pg_temp.claims(p_uid text, p_email text, p_aal text default 'aal1')

@@ -1,6 +1,16 @@
 -- Plan enforcement, the invitation lifecycle, and what the outside world sees.
 -- Impersonation helpers follow the same pattern as 01_tenancy.
 begin;
+
+-- pgTAP is test-only tooling. Creating it inside the transaction means it is
+-- rolled back with everything else, so `supabase test db` needs no setup step
+-- and no deployed database ever carries a thousand assertion functions it will
+-- never call. `search_path` covers both placements: a fresh install lands in
+-- `public`, while a project that enabled pgTAP from the dashboard has it in
+-- `extensions`.
+create extension if not exists pgtap;
+set local search_path to public, extensions;
+
 select plan(13);
 
 create or replace function pg_temp.claims(p_uid text, p_email text)

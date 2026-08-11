@@ -1,6 +1,16 @@
 -- Structural invariants. These are the rules that are easy to break by adding a
 -- table and forgetting the boring part.
 begin;
+
+-- pgTAP is test-only tooling. Creating it inside the transaction means it is
+-- rolled back with everything else, so `supabase test db` needs no setup step
+-- and no deployed database ever carries a thousand assertion functions it will
+-- never call. `search_path` covers both placements: a fresh install lands in
+-- `public`, while a project that enabled pgTAP from the dashboard has it in
+-- `extensions`.
+create extension if not exists pgtap;
+set local search_path to public, extensions;
+
 select plan(14);
 
 -- 1. Every table in `public` has RLS enabled. This is the single check most
@@ -77,10 +87,25 @@ select has_table('public', 'organization_members', 'organization_members exists'
 select has_table('public', 'demos', 'demos exists');
 select has_table('public', 'subscriptions', 'subscriptions exists');
 
-select has_function('app', 'is_org_member', array['uuid'], 'app.is_org_member exists');
-select has_function('app', 'has_org_role', array['uuid', 'org_role'], 'app.has_org_role exists');
-select has_function('public', 'create_organization', array['text', 'text'], 'create_organization RPC exists');
-select has_function('auth_hooks', 'custom_access_token', array['jsonb'], 'custom access token hook exists');
+-- Checked against the catalog rather than pgTAP's has_function(), whose
+-- argument matching depends on how a custom enum's type name renders under the
+-- current search_path. A structural test must not have a failure mode of its own.
+select ok(
+  to_regprocedure('app.is_org_member(uuid)') is not null,
+  'app.is_org_member(uuid) exists'
+);
+select ok(
+  to_regprocedure('app.has_org_role(uuid, public.org_role)') is not null,
+  'app.has_org_role(uuid, org_role) exists'
+);
+select ok(
+  to_regprocedure('public.create_organization(text, text)') is not null,
+  'create_organization RPC exists'
+);
+select ok(
+  to_regprocedure('auth_hooks.custom_access_token(jsonb)') is not null,
+  'custom access token hook exists'
+);
 
 -- The role hierarchy depends on the enum's declaration order.
 select ok(

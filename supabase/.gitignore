@@ -1,0 +1,8 @@
+# Supabase CLI working files
+.branches
+.temp
+.env
+
+# Written by `npm run db:dump` — a convenience snapshot, never a source of
+# truth. Migrations are.
+schema.sql

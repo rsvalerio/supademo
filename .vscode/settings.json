@@ -1,0 +1,25 @@
+{
+  "//": "Edge functions are Deno, the rest of the workspace is Node. Scoping Deno to supabase/functions keeps the two from fighting over the same files.",
+  "deno.enable": true,
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true,
+  "deno.unstable": ["bare-node-builtins", "sloppy-imports"],
+  "deno.importMap": "supabase/functions/deno.json",
+  "[typescript]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
+  },
+  "files.associations": {
+    "*.sql": "sql"
+  },
+  "sqltools.connections": [
+    {
+      "name": "Supademo (local)",
+      "driver": "PostgreSQL",
+      "server": "127.0.0.1",
+      "port": 54322,
+      "database": "postgres",
+      "username": "postgres",
+      "password": "postgres"
+    }
+  ]
+}

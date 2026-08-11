@@ -44,7 +44,8 @@ dropped in later without moving anything.
 | API | PostgREST views, RPC, API keys for machines | `..._rpc.sql` |
 | Testing | pgTAP unit + RLS tests | `supabase/tests/` |
 | Tooling | Typed clients generated from the schema | `packages/db-types/` |
-| CI/CD | Lint, test, migration check, deploy | `.github/workflows/` |
+| Tooling | CLI-driven: start, reset, lint, advisors, gen types, deploy | `docs/supabase-cli.md` |
+| CI/CD | Lint, advisors, test, migration check, deploy | `.github/workflows/` |
 
 ## Layout
 
@@ -59,7 +60,8 @@ dropped in later without moving anything.
 │   ├── migrations/          # ordered, immutable SQL migrations
 │   ├── functions/           # Deno edge functions
 │   ├── tests/               # pgTAP tests (`supabase test db`)
-│   └── seed.sql             # deterministic local seed data
+│   ├── seeds/               # globbed seed files, applied in filename order
+│   └── templates/           # auth email templates
 ├── scripts/                 # dev helpers (typegen, reset, verify)
 ├── docs/                    # architecture, data model, RLS, roadmap
 └── .github/workflows/       # CI + deploy
@@ -67,17 +69,29 @@ dropped in later without moving anything.
 
 ## Quick start
 
+Docker and Node 20+ are the only prerequisites; the Supabase CLI is a pinned
+devDependency, so `npm install` gets you the same version everyone else runs.
+
 ```bash
 npm install
-npm run db:start        # boots the local Supabase stack
-npm run db:reset        # applies migrations + seed
-npm run gen:types       # writes packages/db-types/src/database.types.ts
-npm run test:db         # pgTAP suite
-npm run functions:serve # serve edge functions locally
+npm run setup     # start the stack, apply migrations, seed, generate types
 ```
 
-See [`docs/local-development.md`](docs/local-development.md) for the full loop and
-[`docs/roadmap.md`](docs/roadmap.md) for how frontends slot in.
+That is one script wrapping `supabase start`, `supabase db reset`,
+`supabase db query` and `supabase gen types`. It finishes by printing the local
+URLs, keys and seeded logins.
+
+```bash
+npm run test:db      # pgTAP suite
+npm run db:advisors  # the dashboard's security + performance lints
+npm run verify       # everything CI runs
+```
+
+Everything here goes through the Supabase CLI — there is no `psql` in any
+script and no bespoke migration tooling.
+[`docs/supabase-cli.md`](docs/supabase-cli.md) is the command tour;
+[`docs/local-development.md`](docs/local-development.md) is the daily loop;
+[`docs/roadmap.md`](docs/roadmap.md) covers how frontends slot in.
 
 ## Conventions
 

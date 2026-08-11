@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "denoland.vscode-deno",
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg"
+  ]
+}

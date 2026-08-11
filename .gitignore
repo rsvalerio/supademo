@@ -17,8 +17,9 @@ supabase/logs/
 # editors / os
 .DS_Store
 .idea/
-.vscode/*
-!.vscode/extensions.json
+# .vscode is committed: it scopes the Deno extension to supabase/functions so it
+# does not fight the Node workspace, which is project setup rather than personal
+# preference.
 
 # deno
 deno.lock
