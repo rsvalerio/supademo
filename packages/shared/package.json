@@ -14,7 +14,6 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@supademo/db-types": "*",
-    "typescript": "^5.9.2"
+    "@supademo/db-types": "*"
   }
 }

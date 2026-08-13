@@ -16,7 +16,8 @@ SHELL := /usr/bin/env bash
 # Every target is a task name, never a file, so they must all be phony.
 .PHONY: help setup doctor verify start stop restart status clean \
         reset new test lint advisors query list dump \
-        types serve fmt check deploy secrets cli
+        types serve fmt check deploy secrets \
+        install typecheck js-test
 
 ## help: list the targets
 help:
@@ -119,6 +120,20 @@ check:
 ## deploy: deploy edge functions to the linked project
 deploy:
 	@bash scripts/functions.sh deploy
+
+# --- javascript (packages/ and apps/; supabase/functions is Deno's) ---------
+
+## install: install JavaScript workspace dependencies with Bun
+install:
+	@bash scripts/js.sh install
+
+## typecheck: typecheck packages/ with tsc, run through Bun
+typecheck:
+	@bash scripts/js.sh typecheck
+
+## js-test: run Bun tests in packages/ and apps/
+js-test:
+	@bash scripts/js.sh test
 
 # --- hosted -----------------------------------------------------------------
 

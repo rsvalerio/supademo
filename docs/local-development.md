@@ -5,13 +5,16 @@
 **Docker.** That is the list.
 
 The local stack is a set of containers, so a container runtime is irreducible.
-Everything else the project needs — the Supabase CLI, and Deno for the edge
-functions — is fetched on demand: the CLI as a checksum-pinned binary cached in
-`.supabase-cli/`, Deno via its official image when it is not already installed.
+Everything else is fetched on demand and pinned in `scripts/toolchain.lock`:
 
-You do **not** need Node, npm, a global Supabase CLI, Postgres, or `psql`.
-(Node only becomes relevant when a frontend lands in `apps/`.) On Windows, run
-this from WSL.
+| Tool | Used for | How it arrives |
+| --- | --- | --- |
+| Supabase CLI | everything backend | checksum-pinned binary in `.toolchain/` |
+| Bun | `packages/`, `apps/` | checksum-pinned binary in `.toolchain/` |
+| Deno | `supabase/functions/` fmt, lint, typecheck | official image, or a local deno |
+
+You do **not** need Node, npm, Bun, Deno, a global Supabase CLI, Postgres or
+`psql` installed. On Windows, run this from WSL.
 
 `make doctor` reports exactly what is present and what is missing, checks the
 ports the stack wants, and exits non-zero if a hard requirement is absent — so
@@ -130,7 +133,8 @@ Cheap by design. Nothing local is precious — the seed rebuilds it.
 | Fixture data | `supabase/seeds/` (git) | yes | yes |
 | Rows you created by hand | Docker volume | yes | **no** |
 | Storage objects | Docker volume | yes | **no** |
-| The CLI binary | `.supabase-cli/` (gitignored) | yes | yes |
+| Pinned tool binaries | `.toolchain/` (gitignored) | yes | yes |
+| JS dependencies | `node_modules/` (gitignored) | yes | yes |
 | Generated types | `packages/db-types/` (git) | yes | yes |
 
 The rule of thumb: if it matters, it is in git as a migration or a seed file. If

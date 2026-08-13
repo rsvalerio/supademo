@@ -16,7 +16,16 @@ import type {
 } from "./types.ts";
 import type { OrgRole } from "./permissions.ts";
 
-async function unwrap<T>(promise: PromiseLike<{ data: T | null; error: unknown }>): Promise<T> {
+/**
+ * Throws on error, returns the payload otherwise.
+ *
+ * `T` is supplied by the caller's declared return type rather than inferred
+ * from the response, and that is deliberate: several of these RPCs return
+ * `jsonb`, which Postgres cannot describe more precisely than `Json`. The
+ * domain shape lives in types.ts and is asserted here — which is the entire
+ * reason these wrappers exist rather than callers using `.rpc()` directly.
+ */
+async function unwrap<T>(promise: PromiseLike<{ data: unknown; error: unknown }>): Promise<T> {
   const { data, error } = await promise;
   if (error) throw error;
   return data as T;

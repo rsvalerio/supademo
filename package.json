@@ -7,10 +7,7 @@
     "apps/*",
     "packages/*"
   ],
-  "engines": {
-    "node": ">=20"
-  },
-  "//": "Node is NOT required for backend work \u2014 make (or bash scripts/*.sh directly) needs only Docker, curl and a shell. These aliases exist for npm muscle memory and for the frontends that will live in apps/.",
+  "//": "Bun is the JavaScript toolchain for packages/ and apps/. supabase/functions is Deno's \u2014 the Supabase Edge Runtime is a Deno fork and those files use Deno.serve, EdgeRuntime.waitUntil and Supabase.ai. Neither runtime has to be installed: both are pinned in scripts/toolchain.lock and fetched on demand. Backend work needs neither.",
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "doctor": "bash scripts/doctor.sh",
@@ -20,10 +17,12 @@
     "status": "bash scripts/stack.sh status",
     "test": "bash scripts/db.sh test",
     "db:reset": "bash scripts/db.sh reset",
-    "db:lint": "bash scripts/db.sh lint",
     "db:advisors": "bash scripts/db.sh advisors",
     "gen:types": "bash scripts/types.sh",
     "functions:serve": "bash scripts/functions.sh serve",
-    "functions:deploy": "bash scripts/functions.sh deploy"
+    "typecheck": "bash scripts/js.sh typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
   }
 }

@@ -10,9 +10,13 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export interface Database {
   public: {
-    Tables: Record<string, never>;
-    Views: Record<string, never>;
-    Functions: Record<string, never>;
+    // Deliberately permissive: this file is a placeholder until `make types`
+    // generates the real thing from the live schema. `Record<string, never>`
+    // would be worse than nothing — it types every .rpc() argument as
+    // `undefined` and turns correct calls into type errors.
+    Tables: Record<string, { Row: Record<string, unknown>; Insert: Record<string, unknown>; Update: Record<string, unknown>; Relationships: [] }>;
+    Views: Record<string, { Row: Record<string, unknown>; Relationships: [] }>;
+    Functions: Record<string, { Args: Record<string, unknown>; Returns: unknown }>;
     Enums: {
       org_role: "viewer" | "member" | "admin" | "owner";
       demo_status: "draft" | "published" | "archived";

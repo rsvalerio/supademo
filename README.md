@@ -45,6 +45,7 @@ dropped in later without moving anything.
 | Testing | pgTAP unit + RLS tests | `supabase/tests/` |
 | Tooling | Typed clients generated from the schema | `packages/db-types/` |
 | Tooling | CLI-driven: start, reset, lint, advisors, gen types, deploy | `docs/supabase-cli.md` |
+| Tooling | Pinned, vendored toolchain (Supabase CLI + Bun); Deno for functions | `scripts/toolchain.lock` |
 | CI/CD | Lint, advisors, test, migration check, deploy | `.github/workflows/` |
 
 ## Layout
@@ -77,7 +78,7 @@ make setup
 ```
 
 `./supa` fetches the pinned CLI on first use — a checksum-verified binary from
-the npm registry, cached in `.supabase-cli/` — then `make setup` runs
+the npm registry, cached in `.toolchain/` — then `make setup` runs
 `supabase start`, `db reset`, `db query` and `gen types`, and prints the local
 URLs, keys and seeded logins.
 

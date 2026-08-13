@@ -15,7 +15,7 @@ make setup
 
 `./supa` resolves the CLI on first use: it downloads the pinned version from the
 npm registry over plain HTTPS, checks its SHA-512 against the table in
-`scripts/cli.lock`, and caches it in `.supabase-cli/` (gitignored). About three
+`scripts/toolchain.lock`, and caches it in `.toolchain/` (gitignored). About three
 seconds, once. After that it is the real CLI, unmodified — every flag and
 subcommand behaves exactly as documented upstream.
 
@@ -187,15 +187,17 @@ Hosted project:
 
 ```
 Makefile              one line per target: run a script
-supa                  the CLI itself, resolved and pinned
+supa                  the Supabase CLI itself, resolved and pinned
 scripts/
-  cli.lock            pinned CLI version + per-platform SHA-512 (data, not code)
+  toolchain.lock      pinned tool versions + per-platform SHA-512 (data, not code)
   lib/
     init.sh           the only thing task scripts source; loads the rest in order
     log.sh            bold/step/pass/info/miss/warn/fail — all output goes here
     env.sh            ROOT, .env loading, ensure_env_file
     guard.sh          require_cmd/require_docker/require_stack, port_in_use
-    cli.sh            platform detection, download, checksum, resolution
+    vendor.sh         download + checksum + cache, shared by both pinned tools
+    cli.sh            the Supabase CLI: platform naming, resolution
+    bun.sh            Bun: platform naming, resolution, bun_run
     status.sh         status_value, api_url, anon_key, service_key, ports
     deno.sh           deno_run — local deno, else the official image
   setup.sh            first run
@@ -203,10 +205,11 @@ scripts/
   verify.sh           everything CI runs
   stack.sh            start|stop|restart|status|clean
   db.sh               reset|new|test|lint|advisors|query|list|dump
-  functions.sh        serve|fmt|check|new|list|deploy
+  functions.sh        serve|fmt|check|new|list|deploy   (edge functions: Deno)
+  js.sh               install|typecheck|test|run        (packages/ + apps/: Bun)
   types.sh            regenerate packages/db-types
   secrets.sh          seed Vault entries for scheduled jobs
-  update-cli.sh       re-pin the CLI in cli.lock
+  update-toolchain.sh re-pin a tool in toolchain.lock
 ```
 
 Two conventions worth keeping:
@@ -218,18 +221,32 @@ Two conventions worth keeping:
   functions and resolves the CLI; it does not start containers or print
   reports. That is what makes the libraries safe to reuse from any script.
 
-## Upgrading the CLI
+## Two runtimes, on purpose
 
-The version and its per-platform checksums live in `scripts/cli.lock`:
+| Where | Runtime | Why |
+| --- | --- | --- |
+| `supabase/functions/` | **Deno** | Not a choice. The Supabase Edge Runtime is a Deno fork, and the functions use `Deno.serve`, `EdgeRuntime.waitUntil` and `Supabase.ai` — none of which exist elsewhere. `deno check` is also the only type checker that understands `npm:` specifiers the way the runtime resolves them. |
+| `packages/`, `apps/` | **Bun** | Ordinary TypeScript for clients. Bun is one binary instead of node+npm, and it is fast. |
+
+Neither has to be installed. Bun is vendored exactly like the CLI; Deno runs
+from its official image when absent, which costs nothing because it only ever
+formats, lints and typechecks.
+
+Backend work — migrations, seeds, RLS, tests — touches neither.
+
+## Upgrading a pinned tool
+
+Versions and per-platform checksums live in `scripts/toolchain.lock`:
 
 ```bash
-bash scripts/update-cli.sh 2.114.0
-rm -rf .supabase-cli && ./supa --version
+bash scripts/update-toolchain.sh supabase 2.114.0
+bash scripts/update-toolchain.sh bun 1.3.15
+rm -rf .toolchain && make doctor
 ```
 
-That rewrites the pin from the registry's own integrity hashes, so a CLI upgrade
-is a reviewable diff rather than a silent "latest" that behaves differently on
-your laptop than in CI.
+That rewrites just that tool's block from the registry's own integrity hashes,
+so an upgrade is a reviewable diff rather than a silent "latest" that behaves
+differently on your laptop than in CI.
 
 ## Where files live, and what resolves relative to what
 

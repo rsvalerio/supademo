@@ -48,14 +48,18 @@ check_toolchain() {
     && pass "supabase cli" "$(cli_version) (vendored)" \
     || info "supabase cli" "$(cli_version) — will be fetched on first use"
 
+  bun_is_cached \
+    && pass "bun" "$(bun_version) (vendored) — packages/ and apps/" \
+    || info "bun" "$(bun_version) — will be fetched when JavaScript is touched"
+
   # Optional: their absence only changes which code path runs.
   command -v deno >/dev/null 2>&1 \
     && info "deno" "$(deno --version 2>/dev/null | head -1) (local)" \
-    || info "deno" "absent — fmt and check will use $DENO_IMAGE"
+    || info "deno" "absent — edge function fmt/check will use $DENO_IMAGE"
 
   command -v node >/dev/null 2>&1 \
-    && info "node" "$(node --version) — only needed for future apps/ frontends" \
-    || info "node" "absent — not needed for backend work"
+    && info "node" "$(node --version) — not used; Bun is the JS toolchain" \
+    || info "node" "absent — not needed"
 
   command -v make >/dev/null 2>&1 \
     && pass "make" "$(make --version 2>/dev/null | head -1 | cut -d' ' -f1-3)" \
