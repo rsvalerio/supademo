@@ -203,6 +203,14 @@ select private.schedule_job(
   $job$select private.enforce_retention()$job$
 );
 
+-- Rate-limit windows go stale within the hour, so they get their own sweep
+-- rather than waiting for the weekly one.
+select private.schedule_job(
+  'supademo-api-retention',
+  '20 * * * *',                       -- hourly, at :20
+  $job$select private.enforce_api_retention()$job$
+);
+
 select private.schedule_job(
   'supademo-quota-warnings',
   '0 9 * * *',                        -- 09:00 UTC daily

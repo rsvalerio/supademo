@@ -9,7 +9,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/init.sh"
 # config.toml at deploy time, so the public endpoints need --no-verify-jwt.
 # These lists are the same decision as the [functions.*] blocks in config.toml,
 # written twice — so they are checked against each other before anything ships.
-PUBLIC_FUNCTIONS=(health stripe-webhook auth-email-hook public-demo)
+PUBLIC_FUNCTIONS=(health stripe-webhook auth-email-hook public-demo api-v1)
 PRIVATE_FUNCTIONS=(billing-portal embed-document queue-worker usage-rollup)
 
 serve_functions() {
