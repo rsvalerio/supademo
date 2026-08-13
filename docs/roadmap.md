@@ -29,8 +29,9 @@ Suggested order, and why:
 
 **Ready to build on what exists**
 
-- **Write endpoints for the machine API.** `api-v1` is read-only; `demos:write`
-  and `documents:write` are defined as scopes but nothing consumes them yet.
+- **`leads:read` and `projects:read` endpoints.** Both scopes are defined and
+  validated but no route consumes them yet — the smallest possible next slice
+  of the machine API.
 - **Export jobs.** The `exports` bucket and its policies exist and nothing
   writes to them yet. A queue message, a worker, a signed URL in a notification.
 - **More domain events.** `private.dispatch_event()` fans out to subscribed
