@@ -31,6 +31,11 @@ jobs:
       - name: Start the local stack
         run: ./supa start
 
+      # .tool-versions is generated from scripts/toolchain.lock; a hand-edit or a
+      # lock bump must not leave mise/asdf users on a different version.
+      - name: Pinned toolchain is consistent
+        run: bash scripts/tool-versions.sh --check
+
       - name: Verify migrations apply to a clean database
         run: ./supa db reset
 

@@ -55,7 +55,7 @@ check_toolchain() {
   # Optional: their absence only changes which code path runs.
   command -v deno >/dev/null 2>&1 \
     && info "deno" "$(deno --version 2>/dev/null | head -1) (local)" \
-    || info "deno" "absent — edge function fmt/check will use $DENO_IMAGE"
+    || info "deno" "absent — edge function fmt/check will use $(deno_image)"
 
   command -v node >/dev/null 2>&1 \
     && info "node" "$(node --version) — not used; Bun is the JS toolchain" \
@@ -64,6 +64,35 @@ check_toolchain() {
   command -v make >/dev/null 2>&1 \
     && pass "make" "$(make --version 2>/dev/null | head -1 | cut -d' ' -f1-3)" \
     || info "make" "absent — call the scripts directly: bash scripts/<name>.sh"
+}
+
+# .tool-versions is optional. This reports whether a version manager is
+# satisfying the pins, purely so the "why did it download again?" question
+# answers itself.
+check_version_manager() {
+  step "Version manager (optional)"
+
+  local manager=""
+  command -v mise >/dev/null 2>&1 && manager="mise $(mise --version 2>/dev/null | head -1)"
+  [[ -z "$manager" ]] && command -v asdf >/dev/null 2>&1 && manager="asdf $(asdf --version 2>/dev/null | head -1)"
+
+  if [[ -n "$manager" ]]; then
+    pass "detected" "$manager"
+  else
+    info "detected" "none — the scripts vendor the pinned tools themselves"
+  fi
+
+  local entry name want
+  for entry in "supabase:$(cli_version)" "bun:$(bun_version)" "deno:$(deno_version)"; do
+    name="${entry%%:*}"; want="${entry##*:}"
+    if path_tool_matching "$name" "$want" >/dev/null; then
+      pass "$name on PATH" "$want — used directly, nothing to download"
+    elif command -v "$name" >/dev/null 2>&1; then
+      info "$name on PATH" "wrong version; the pinned $want is used instead"
+    else
+      info "$name on PATH" "absent; the pinned $want is used"
+    fi
+  done
 }
 
 check_project() {
@@ -112,6 +141,7 @@ check_stack() {
 main() {
   check_required_tools
   check_toolchain
+  check_version_manager
   check_project
   check_ports
   check_stack

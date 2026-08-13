@@ -29,6 +29,20 @@ sha512_of() {
 # True on musl systems (Alpine), which need a different build.
 is_musl() { ls /lib/ld-musl-* >/dev/null 2>&1; }
 
+# Echoes the path to `cmd` when it is already installed AT EXACTLY the pinned
+# version, and fails otherwise. That is the whole rule: provenance does not
+# matter — mise, asdf, Homebrew, a manual install — but the version does. It is
+# what lets .tool-versions save a download without letting a stray 1.3.11 stand
+# in for a pinned 1.3.14.
+path_tool_matching() {
+  local cmd="$1" want="$2" found version
+  found="$(command -v "$cmd" 2>/dev/null)" || return 1
+  [[ -n "$found" ]] || return 1
+  version="$("$found" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  [[ "$version" == "$want" ]] || return 1
+  echo "$found"
+}
+
 _vendor_tmp=""
 _vendor_cleanup() { [[ -n "$_vendor_tmp" ]] && rm -rf "$_vendor_tmp"; }
 

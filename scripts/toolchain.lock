@@ -4,6 +4,12 @@
 # supabase.* — the Supabase CLI, which drives everything (docs/supabase-cli.md)
 # bun.*      — the JS runtime for packages/ and apps/. NOT for supabase/functions,
 #              which must run on Deno because that is what the Edge Runtime is.
+# deno.*      — only fmt/lint/typecheck for supabase/functions. Version only: it
+#              is never vendored, it runs from its official image or a local
+#              install, so there is no tarball to checksum.
+#
+# .tool-versions is generated from this file. Regenerating either keeps them in
+# step; `make verify` fails if they drift.
 
 supabase.version=2.113.0
 supabase.darwin-arm64=438d3495ecd9af361fefe2d22413470947a080ce0d07e24e66bfd1cf21fdf87dd32ab2c233987db96a14ddf904b9571c84102b9986115c15aab02c2adc359dce
@@ -20,3 +26,5 @@ bun.linux-aarch64=5f94ac3d91ecfa260ef11fde7c8711b5cee04f64360e03df9620b1124c7871
 bun.linux-aarch64-musl=8e6a8e03dd8277534bff55c17786c59092f143ce8ad115bba21c52daacf302fba2b4ee09888c638d3782b29a14e38cc2a331fbd87a5f65f504d8e9f7d4e8e758
 bun.linux-x64=ece55300abf07cf9926c85751e974ea15571e5545ce36ec6b8f3e77bddcdeaf93879004f21df675e664387dff319a28f75b56356d41265a7d6428523c77f14b7
 bun.linux-x64-musl=181081fe4fec22a72bd3a79336083b838eaa894bf7e496acc785e271c27f9fb446aab138456503fd72416d6169ad53e3bea779f7e42d4a74bdf571aabdfb477e
+
+deno.version=2.1.4

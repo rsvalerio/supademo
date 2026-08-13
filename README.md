@@ -98,7 +98,10 @@ The day-to-day lifecycle is in
 [`docs/local-development.md`](docs/local-development.md#the-lifecycle).
 
 CI runs the same `./supa` resolver rather than an install action, so tooling
-cannot drift between a laptop and a build agent.
+cannot drift between a laptop and a build agent. Already a mise or asdf user?
+`.tool-versions` pins the same three tools — generated from
+`scripts/toolchain.lock`, and entirely optional, since a PATH tool is used only
+when it matches the pin exactly.
 
 Everything here goes through the Supabase CLI — no `psql`, no bespoke migration
 tooling. [`docs/supabase-cli.md`](docs/supabase-cli.md) is the command tour and

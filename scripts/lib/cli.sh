@@ -39,11 +39,16 @@ cli_download() {
     "package/bin/supabase" "$(cli_binary)"
 }
 
-# Override > cached > fetch. SUPABASE_CLI_BINARY_OVERRIDE is the same variable
-# the official npm wrapper honours.
+# Override > already installed at the pinned version (mise, asdf, Homebrew…) >
+# cached > fetch. SUPABASE_CLI_BINARY_OVERRIDE is the same variable the official
+# npm wrapper honours.
 cli_resolve() {
+  local on_path
   if [[ -n "${SUPABASE_CLI_BINARY_OVERRIDE:-}" ]]; then
     echo "$SUPABASE_CLI_BINARY_OVERRIDE"; return
+  fi
+  if on_path="$(path_tool_matching supabase "$(cli_version)")"; then
+    echo "$on_path"; return
   fi
   cli_is_cached || cli_download >&2
   cli_binary

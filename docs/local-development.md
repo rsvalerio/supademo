@@ -16,6 +16,35 @@ Everything else is fetched on demand and pinned in `scripts/toolchain.lock`:
 You do **not** need Node, npm, Bun, Deno, a global Supabase CLI, Postgres or
 `psql` installed. On Windows, run this from WSL.
 
+### If you already use mise or asdf
+
+`.tool-versions` pins the same three tools, so `mise install` (or `asdf
+install`) sets them up the way you set up everything else:
+
+```
+supabase 2.113.0
+bun 1.3.14
+deno 2.1.4
+```
+
+It is generated from `scripts/toolchain.lock` — edit that and run
+`make tool-versions`; `make verify` fails if the two drift.
+
+This is a convenience, never a requirement. A tool already on PATH is used
+**only when it is exactly the pinned version**; anything else and the scripts
+fetch the pin themselves. So a half-configured version manager degrades to the
+zero-install path rather than silently running the wrong build.
+`make doctor` shows which is happening.
+
+Two caveats worth knowing:
+
+- **asdf** has short-name plugins for `bun` and `deno` but not `supabase`; you
+  would have to add one by URL. Simplest is to let the scripts vendor the CLI —
+  everything still works.
+- **Docker** is deliberately absent from `.tool-versions`. Neither tool installs
+  a daemon, and the stack's container images are pulled on the first
+  `make setup` — there is no supported way to prefetch them.
+
 `make doctor` reports exactly what is present and what is missing, checks the
 ports the stack wants, and exits non-zero if a hard requirement is absent — so
 it works as a preflight check in a script too. The scripts also check for

@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/init.sh"
 TOOL="${1:-}"
 VERSION="${2:-}"
 [[ -n "$TOOL" && -n "$VERSION" ]] \
-  || fail "Usage: bash scripts/update-toolchain.sh <supabase|bun> <version>"
+  || fail "Usage: bash scripts/update-toolchain.sh <supabase|bun|deno> <version>"
 
 require_cmd curl "to reach the npm registry"
 
@@ -22,7 +22,10 @@ tool_platforms() {
   case "$1" in
     supabase) echo "darwin-arm64 darwin-x64 linux-arm64 linux-arm64-musl linux-x64 linux-x64-musl" ;;
     bun)      echo "darwin-aarch64 darwin-x64 linux-aarch64 linux-aarch64-musl linux-x64 linux-x64-musl" ;;
-    *) fail "Unknown tool: $1 (supabase|bun)" ;;
+    # Deno is never vendored — it runs from its official image or a matching
+    # local install — so there is no tarball to checksum.
+    deno)     echo "" ;;
+    *) fail "Unknown tool: $1 (supabase|bun|deno)" ;;
   esac
 }
 
@@ -75,7 +78,11 @@ main() {
 
   rewrite_lock "$block"
   bold "Pinned ${TOOL} ${VERSION} in scripts/toolchain.lock"
+
+  # .tool-versions is generated from the lock; regenerate it in the same commit.
+  bash scripts/tool-versions.sh
   dim  "Now run: rm -rf .toolchain && make doctor"
+
 }
 
 main "$@"

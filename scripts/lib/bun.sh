@@ -39,13 +39,16 @@ bun_download() {
     "package/bin/bun" "$(bun_binary)"
 }
 
-# The pinned version wins, exactly as it does for the CLI. Preferring whatever
-# bun happens to be on PATH would save a download and give up the only thing
-# that makes a laptop, an agent and a CI runner agree — which is the whole point
-# of vendoring. Set BUN_BINARY_OVERRIDE to use your own on purpose.
+# Same rule as the CLI: an installed bun is used only when it is exactly the
+# pinned version. Accepting any bun on PATH would give up the one thing that
+# makes a laptop, an agent and a CI runner agree.
 bun_resolve() {
+  local on_path
   if [[ -n "${BUN_BINARY_OVERRIDE:-}" ]]; then
     echo "$BUN_BINARY_OVERRIDE"; return
+  fi
+  if on_path="$(path_tool_matching bun "$(bun_version)")"; then
+    echo "$on_path"; return
   fi
   bun_is_cached || bun_download >&2
   bun_binary

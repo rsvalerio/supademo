@@ -1,0 +1,15 @@
+# Generated from scripts/toolchain.lock — edit that, then run: make tool-versions
+#
+# For people who already use mise or asdf. It is a convenience, never a
+# requirement: if a tool is absent, or present at the wrong version, the scripts
+# fetch the pinned one themselves. Nothing here is load-bearing.
+#
+#   mise install     resolves all three (supabase comes from its aqua backend)
+#   asdf install     has short names for bun and deno; supabase needs a plugin
+#                    added by URL first, or just let the scripts vendor it
+#
+# Docker is deliberately absent: neither tool can install a daemon, and the
+# stack's container images are pulled on the first `make setup`.
+supabase 2.113.0
+bun 1.3.14
+deno 2.1.4

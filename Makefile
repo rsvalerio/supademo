@@ -17,7 +17,7 @@ SHELL := /usr/bin/env bash
 .PHONY: help setup doctor verify start stop restart status clean \
         reset new test lint advisors query list dump \
         types serve fmt check deploy secrets \
-        install typecheck js-test
+        install typecheck js-test tool-versions
 
 ## help: list the targets
 help:
@@ -42,6 +42,10 @@ doctor:
 ## verify: everything CI runs
 verify:
 	@bash scripts/verify.sh
+
+## tool-versions: regenerate .tool-versions from scripts/toolchain.lock
+tool-versions:
+	@bash scripts/tool-versions.sh
 
 # --- the stack --------------------------------------------------------------
 

@@ -190,6 +190,7 @@ Makefile              one line per target: run a script
 supa                  the Supabase CLI itself, resolved and pinned
 scripts/
   toolchain.lock      pinned tool versions + per-platform SHA-512 (data, not code)
+  tool-versions.sh    generates/checks .tool-versions from that lock
   lib/
     init.sh           the only thing task scripts source; loads the rest in order
     log.sh            bold/step/pass/info/miss/warn/fail — all output goes here
@@ -241,8 +242,12 @@ Versions and per-platform checksums live in `scripts/toolchain.lock`:
 ```bash
 bash scripts/update-toolchain.sh supabase 2.114.0
 bash scripts/update-toolchain.sh bun 1.3.15
+bash scripts/update-toolchain.sh deno 2.2.0
 rm -rf .toolchain && make doctor
 ```
+
+It regenerates `.tool-versions` in the same step, so mise/asdf users and the
+vendored path never disagree. `make verify` fails if they do.
 
 That rewrites just that tool's block from the registry's own integrity hashes,
 so an upgrade is a reviewable diff rather than a silent "latest" that behaves

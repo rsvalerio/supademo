@@ -5,6 +5,13 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/init.sh"
 
+# .tool-versions is generated, so a hand-edit or a lock bump must not slip
+# through and leave mise/asdf users on a different version than everyone else.
+verify_tool_versions() {
+  step "Pinned toolchain"
+  bash scripts/tool-versions.sh --check
+}
+
 verify_migrations() {
   step "Replaying every migration against an empty database"
   supa db reset
@@ -41,6 +48,7 @@ verify_types_are_current() {
 
 main() {
   require_stack
+  verify_tool_versions
   verify_migrations
   verify_schema
   verify_tests
