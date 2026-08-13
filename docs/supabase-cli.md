@@ -128,6 +128,7 @@ Schema:
 Checks:
 
 ```bash
+./x doctor                    # preflight: tools, ports, stack state
 ./x lint                      # typing errors in functions and views
 ./x advisors                  # the dashboard's Security + Performance advisors
 ./x test                      # the pgTAP suite

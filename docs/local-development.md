@@ -13,6 +13,12 @@ You do **not** need Node, npm, a global Supabase CLI, Postgres, or `psql`.
 (Node only becomes relevant when a frontend lands in `apps/`.) On Windows, run
 this from WSL.
 
+`./x doctor` reports exactly what is present and what is missing, checks the
+ports the stack wants, and exits non-zero if a hard requirement is absent — so
+it works as a preflight check in a script too. The scripts also check for
+themselves: `./x start` and friends fail with a plain message if the Docker
+daemon is not running, rather than surfacing a socket error.
+
 ## First run
 
 ```bash
@@ -39,6 +45,96 @@ Every auth email lands in Inbucket. Nothing is sent to a real address locally.
 `./x status` reprints these at any time; `./supa status -o env` gives the
 same thing machine-readably, which is how the scripts read the anon and service
 keys.
+
+## The lifecycle
+
+### Day 1 — a fresh clone
+
+```bash
+git clone <repo> && cd supademo
+./x doctor      # optional: what is present, what is missing, what ports are busy
+./x setup       # everything else
+```
+
+`./x setup` is idempotent. Run it again any time; it will not duplicate
+anything.
+
+### Every day
+
+```bash
+./x start       # ~30s cold, a few seconds warm
+… work …
+./x stop        # or leave it running
+```
+
+`./x stop` keeps the data volume, so the next `start` has your data. To throw
+it away, `./supa stop --no-backup`.
+
+### Making a schema change
+
+```bash
+./x new add_widget_table     # creates supabase/migrations/<timestamp>_add_widget_table.sql
+$EDITOR supabase/migrations/*_add_widget_table.sql
+./x reset                    # replay everything from empty, then seed
+./x types                    # regenerate packages/db-types
+./x test                     # pgTAP
+./x advisors                 # did the new table forget RLS?
+```
+
+Always `reset`, never "apply just the new one". Replaying from empty is the only
+thing that catches a migration which works against *your* database but not a
+fresh one — which is the database CI and production both have.
+
+Prefer clicking around in Studio first? Do that, then capture it:
+
+```bash
+./supa db diff -f add_widget_table
+```
+
+Read what it wrote before committing. The diff captures what changed, not what
+you meant.
+
+### Working on edge functions
+
+```bash
+./x serve                    # hot-reloads on save
+# in another shell:
+curl http://127.0.0.1:54321/functions/v1/health
+./x check                    # lint + typecheck
+```
+
+### Before pushing
+
+```bash
+./x verify
+```
+
+That is exactly what CI runs: reset, lint, advisors, pgTAP, function checks, and
+a stale-types check. If it passes locally it passes in CI, because both call the
+same scripts through the same pinned CLI.
+
+### Starting over
+
+```bash
+./supa stop --no-backup      # drop the data volume
+./x setup                    # rebuild from migrations + seed
+```
+
+Cheap by design. Nothing local is precious — the seed rebuilds it.
+
+### Where state actually lives
+
+| State | Lives in | Survives `./x stop`? | Survives `--no-backup`? |
+| --- | --- | --- | --- |
+| Your schema | `supabase/migrations/` (git) | yes | yes |
+| Fixture data | `supabase/seeds/` (git) | yes | yes |
+| Rows you created by hand | Docker volume | yes | **no** |
+| Storage objects | Docker volume | yes | **no** |
+| The CLI binary | `.supabase-cli/` (gitignored) | yes | yes |
+| Generated types | `packages/db-types/` (git) | yes | yes |
+
+The rule of thumb: if it matters, it is in git as a migration or a seed file. If
+it is only in the volume, treat it as scratch.
 
 ## Seeded accounts
 

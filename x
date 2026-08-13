@@ -15,16 +15,17 @@ shift || true
 
 case "$TASK" in
   setup)      exec bash scripts/bootstrap.sh "$@" ;;
+  doctor)     exec bash scripts/doctor.sh "$@" ;;
   verify)     exec bash scripts/verify.sh "$@" ;;
   types)      exec bash scripts/gen-types.sh "$@" ;;
   serve)      exec bash scripts/serve-functions.sh "$@" ;;
   secrets)    exec bash scripts/bootstrap-secrets.sh "$@" ;;
   deploy)     exec bash scripts/deploy-functions.sh "$@" ;;
 
-  start)      exec "$SUPABASE" start "$@" ;;
-  stop)       exec "$SUPABASE" stop "$@" ;;
-  status)     exec "$SUPABASE" status "$@" ;;
-  reset)      exec "$SUPABASE" db reset "$@" ;;
+  start)      require_docker; exec "$SUPABASE" start "$@" ;;
+  stop)       require_docker; exec "$SUPABASE" stop "$@" ;;
+  status)     require_docker; exec "$SUPABASE" status "$@" ;;
+  reset)      require_stack;  exec "$SUPABASE" db reset "$@" ;;
   test)       require_stack; exec "$SUPABASE" test db --local "$@" ;;
   lint)       require_stack; exec "$SUPABASE" db lint --local --level warning "$@" ;;
   advisors)   require_stack; exec "$SUPABASE" db advisors --local --level warn "$@" ;;
@@ -44,6 +45,7 @@ case "$TASK" in
 Supademo tasks — Docker is the only prerequisite.
 
   ./x setup       first run: start the stack, migrate, seed, generate types
+  ./x doctor      what this machine has, what is missing, what is running
   ./x verify      everything CI runs
 
   ./x start       boot the local Supabase stack

@@ -82,12 +82,18 @@ the npm registry, cached in `.supabase-cli/` — then `./x setup` runs
 URLs, keys and seeded logins.
 
 ```bash
+./x doctor      # what is installed, what is missing, what ports are busy
 ./x test        # pgTAP suite
 ./x advisors    # the dashboard's security + performance lints
 ./x verify      # everything CI runs
 ./x help        # every task
 ./supa <cmd>    # the CLI itself, unmodified
 ```
+
+`make setup`, `make verify` and friends work too — the `Makefile` is a thin
+wrapper over `./x` for muscle memory, not a second source of truth.
+The day-to-day lifecycle is in
+[`docs/local-development.md`](docs/local-development.md#the-lifecycle).
 
 CI runs the same `./supa` resolver rather than an install action, so tooling
 cannot drift between a laptop and a build agent.

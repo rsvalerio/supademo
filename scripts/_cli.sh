@@ -144,7 +144,16 @@ status_value() {
     | head -1
 }
 
+# Every task that touches the stack needs a live daemon. Checking here means one
+# clear message instead of whatever the CLI happens to say when it cannot reach
+# the socket.
+require_docker() {
+  command -v docker >/dev/null 2>&1 || fail "Docker is not installed. It is the one prerequisite; see docs/local-development.md."
+  docker info >/dev/null 2>&1 || fail "Docker is installed but not running. Start Docker Desktop (or dockerd) and retry."
+}
+
 require_stack() {
+  require_docker
   if ! supa status >/dev/null 2>&1; then
     fail "The local stack is not running. Start it with: ./x start"
   fi
