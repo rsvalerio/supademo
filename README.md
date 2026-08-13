@@ -73,25 +73,26 @@ dropped in later without moving anything.
 Supabase CLI, no Postgres client tools.
 
 ```bash
-./x setup
+make setup
 ```
 
 `./supa` fetches the pinned CLI on first use — a checksum-verified binary from
-the npm registry, cached in `.supabase-cli/` — then `./x setup` runs
+the npm registry, cached in `.supabase-cli/` — then `make setup` runs
 `supabase start`, `db reset`, `db query` and `gen types`, and prints the local
 URLs, keys and seeded logins.
 
 ```bash
-./x doctor      # what is installed, what is missing, what ports are busy
-./x test        # pgTAP suite
-./x advisors    # the dashboard's security + performance lints
-./x verify      # everything CI runs
-./x help        # every task
+make doctor      # what is installed, what is missing, what ports are busy
+make test        # pgTAP suite
+make advisors    # the dashboard's security + performance lints
+make verify      # everything CI runs
+make help        # every task
 ./supa <cmd>    # the CLI itself, unmodified
 ```
 
-`make setup`, `make verify` and friends work too — the `Makefile` is a thin
-wrapper over `./x` for muscle memory, not a second source of truth.
+The `Makefile` is deliberately thin: every target is one line that runs a
+script in `scripts/`, which is where the logic lives. `npm run …` aliases call
+the same scripts, so neither `make` nor Node is load-bearing.
 The day-to-day lifecycle is in
 [`docs/local-development.md`](docs/local-development.md#the-lifecycle).
 

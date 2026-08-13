@@ -10,24 +10,20 @@
   "engines": {
     "node": ">=20"
   },
-  "//": "Node is NOT required for backend work — ./x and ./supa need only Docker, curl and a shell. These aliases exist so `npm run` muscle memory keeps working, and for the frontends that will live in apps/.",
+  "//": "Node is NOT required for backend work \u2014 make (or bash scripts/*.sh directly) needs only Docker, curl and a shell. These aliases exist for npm muscle memory and for the frontends that will live in apps/.",
   "scripts": {
-    "setup": "./x setup",
-    "verify": "./x verify",
-    "start": "./x start",
-    "stop": "./x stop",
-    "status": "./x status",
-    "test": "./x test",
-    "db:reset": "./x reset",
-    "db:new": "./x new",
-    "db:lint": "./x lint",
-    "db:advisors": "./x advisors",
-    "db:query": "./x query",
-    "gen:types": "./x types",
-    "functions:serve": "./x serve",
-    "functions:deploy": "./x deploy",
-    "fmt": "./x fmt",
-    "check": "./x check",
-    "supa": "./supa"
+    "setup": "bash scripts/setup.sh",
+    "doctor": "bash scripts/doctor.sh",
+    "verify": "bash scripts/verify.sh",
+    "start": "bash scripts/stack.sh start",
+    "stop": "bash scripts/stack.sh stop",
+    "status": "bash scripts/stack.sh status",
+    "test": "bash scripts/db.sh test",
+    "db:reset": "bash scripts/db.sh reset",
+    "db:lint": "bash scripts/db.sh lint",
+    "db:advisors": "bash scripts/db.sh advisors",
+    "gen:types": "bash scripts/types.sh",
+    "functions:serve": "bash scripts/functions.sh serve",
+    "functions:deploy": "bash scripts/functions.sh deploy"
   }
 }

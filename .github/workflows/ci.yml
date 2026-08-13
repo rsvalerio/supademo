@@ -72,13 +72,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ./x fmt and ./x check use a local deno when there is one and the
-      # official image otherwise, so no setup action is needed here either.
+      # These use a local deno when there is one and the official image
+      # otherwise, so no setup action is needed here either.
       - name: Format
-        run: ./x fmt --check
+        run: bash scripts/functions.sh fmt --check
 
       - name: Lint and type check
-        run: ./x check
+        run: bash scripts/functions.sh check
 
   security:
     name: Policy invariants

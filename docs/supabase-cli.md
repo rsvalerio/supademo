@@ -10,23 +10,25 @@ Not Node, not npm, not a globally installed CLI, not Postgres client tools.
 
 ```bash
 git clone … && cd supademo
-./x setup
+make setup
 ```
 
 `./supa` resolves the CLI on first use: it downloads the pinned version from the
 npm registry over plain HTTPS, checks its SHA-512 against the table in
-`scripts/_cli.sh`, and caches it in `.supabase-cli/` (gitignored). About three
+`scripts/cli.lock`, and caches it in `.supabase-cli/` (gitignored). About three
 seconds, once. After that it is the real CLI, unmodified — every flag and
 subcommand behaves exactly as documented upstream.
 
 ```bash
 ./supa <any supabase command>    # the CLI itself
-./x <task>                       # the handful of composite tasks
-./x help                         # what those tasks are
+make <task>                      # the composite tasks
+make help                        # what those tasks are
 ```
 
-`npm run …` still works for the same tasks, but only as an alias — Node is not
-needed for anything on the backend.
+Every `make` target is one line that runs a script in `scripts/`; the shared
+functions live in `scripts/lib/`. So `make` is a convenience, not a dependency —
+`bash scripts/setup.sh` does the same thing, which matters on a machine without
+the Xcode command line tools. `npm run …` aliases exist for muscle memory too.
 
 ### Why not run the CLI in a container too?
 
@@ -46,7 +48,7 @@ it a worse trade than a pinned binary:
 
 A checksum-pinned binary gives the same reproducibility with none of that. Where
 a container genuinely is the right answer — Deno, which needs nothing from the
-host but the source tree — that is exactly what `./x fmt` and `./x check` do:
+host but the source tree — that is exactly what `make fmt` and `make check` do:
 use a local `deno` if there is one, otherwise `docker run denoland/deno`.
 
 So the floor is: **Docker, a POSIX shell, `curl` and `tar`.** Docker is
@@ -55,7 +57,7 @@ every Linux distribution. On Windows, use WSL.
 
 ## Getting started
 
-`./x setup` (`scripts/bootstrap.sh`) is a thin sequence of CLI calls:
+`make setup` (`scripts/setup.sh`) is a thin sequence of CLI calls:
 
 | Step | Command | What it does |
 | --- | --- | --- |
@@ -101,14 +103,14 @@ Two things worth understanding, because they explain most confusion:
 
 ## Everyday commands
 
-`./x` covers the composite tasks; anything else is `./supa <command>`.
+`make` covers the composite tasks; anything else is `./supa <command>`.
 
 Stack:
 
 ```bash
-./x start                     # boot the local stack
-./x stop                      # shut it down, keeping the data volume
-./x status                    # URLs and keys
+make start                     # boot the local stack
+make stop                      # shut it down, keeping the data volume
+make status                    # URLs and keys
 ./supa stop --no-backup       # shut down and throw the data away
 ./supa status -o env          # the same status, shell-shaped
 ./supa services               # image versions, local vs hosted
@@ -117,8 +119,8 @@ Stack:
 Schema:
 
 ```bash
-./x new add_widgets           # supabase migration new — a timestamped file
-./x reset                     # replay every migration from empty, then seed
+make new name=add_widgets           # supabase migration new — a timestamped file
+make reset                     # replay every migration from empty, then seed
 ./supa migration list         # local vs remote migration history
 ./supa migration up           # apply only what is pending (rarely what you want)
 ./supa db diff -f my_change   # capture Studio edits as a migration
@@ -128,16 +130,16 @@ Schema:
 Checks:
 
 ```bash
-./x doctor                    # preflight: tools, ports, stack state
-./x lint                      # typing errors in functions and views
-./x advisors                  # the dashboard's Security + Performance advisors
-./x test                      # the pgTAP suite
-./x verify                    # everything CI runs
+make doctor                    # preflight: tools, ports, stack state
+make lint                      # typing errors in functions and views
+make advisors                  # the dashboard's Security + Performance advisors
+make test                      # the pgTAP suite
+make verify                    # everything CI runs
 ./supa test new my_test       # scaffold a pgTAP test file
 ./supa inspect db table-stats --local
 ```
 
-`./x advisors` is the one people miss. It runs the same checks as the
+`make advisors` is the one people miss. It runs the same checks as the
 dashboard's Security Advisor — tables without RLS, `SECURITY DEFINER` views,
 functions with a mutable `search_path`, unindexed foreign keys — and CI fails on
 any security finding at error level.
@@ -145,14 +147,14 @@ any security finding at error level.
 Ad-hoc SQL, without a Postgres client installed:
 
 ```bash
-./x query "select id, name, price_cents from api.plans order by sort_order"
+make query sql="select id, name, price_cents from api.plans order by sort_order"
 ./supa db query --local --file some-script.sql
 ```
 
 Types:
 
 ```bash
-./x types                     # TypeScript, from the local stack
+make types                     # TypeScript, from the local stack
 ./supa gen types --local --lang swift --schema public,api
 ```
 
@@ -162,12 +164,12 @@ each client generates its own binding rather than sharing a hand-written one.
 Edge functions:
 
 ```bash
-./x serve                     # serve all of them, hot-reloading
-./x fmt                       # format (--check to verify only)
-./x check                     # lint + typecheck
+make serve                     # serve all of them, hot-reloading
+make fmt                       # format (--check to verify only)
+make check                     # lint + typecheck
 ./supa functions new my-fn    # scaffold one
 ./supa functions list         # what is deployed
-./x deploy                    # deploy all (respects verify_jwt per function)
+make deploy                    # deploy all (respects verify_jwt per function)
 ```
 
 Hosted project:
@@ -181,9 +183,44 @@ Hosted project:
 ./supa secrets list
 ```
 
+## How the scripts are organised
+
+```
+Makefile              one line per target: run a script
+supa                  the CLI itself, resolved and pinned
+scripts/
+  cli.lock            pinned CLI version + per-platform SHA-512 (data, not code)
+  lib/
+    init.sh           the only thing task scripts source; loads the rest in order
+    log.sh            bold/step/pass/info/miss/warn/fail — all output goes here
+    env.sh            ROOT, .env loading, ensure_env_file
+    guard.sh          require_cmd/require_docker/require_stack, port_in_use
+    cli.sh            platform detection, download, checksum, resolution
+    status.sh         status_value, api_url, anon_key, service_key, ports
+    deno.sh           deno_run — local deno, else the official image
+  setup.sh            first run
+  doctor.sh           preflight report
+  verify.sh           everything CI runs
+  stack.sh            start|stop|restart|status|clean
+  db.sh               reset|new|test|lint|advisors|query|list|dump
+  functions.sh        serve|fmt|check|new|list|deploy
+  types.sh            regenerate packages/db-types
+  secrets.sh          seed Vault entries for scheduled jobs
+  update-cli.sh       re-pin the CLI in cli.lock
+```
+
+Two conventions worth keeping:
+
+- **Task scripts define functions and call `main` at the bottom.** The dispatch
+  `case` is the last thing in the file, so reading top-to-bottom gives you the
+  pieces before the wiring.
+- **`scripts/lib/` never runs anything on its own.** Sourcing it defines
+  functions and resolves the CLI; it does not start containers or print
+  reports. That is what makes the libraries safe to reuse from any script.
+
 ## Upgrading the CLI
 
-The version and its per-platform checksums live in `scripts/_cli.sh`:
+The version and its per-platform checksums live in `scripts/cli.lock`:
 
 ```bash
 bash scripts/update-cli.sh 2.114.0
@@ -273,8 +310,8 @@ export SUPABASE_PROJECT_REF=abcdefgh
 ./supa migration list          # confirm what is about to run
 ./supa db push --linked
 ./supa secrets set --env-file supabase/functions/.env.local
-./x deploy
-bash scripts/bootstrap-secrets.sh --linked   # Vault entries for pg_cron
+make deploy
+bash scripts/secrets.sh --linked   # Vault entries for pg_cron
 ```
 
 `supabase db push` applies only migrations the remote has not seen, tracked in

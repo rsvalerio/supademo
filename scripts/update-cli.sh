@@ -1,44 +1,57 @@
 #!/usr/bin/env bash
-# Re-pins the Supabase CLI in scripts/_cli.sh.
+# Re-pins the Supabase CLI in scripts/cli.lock.
 #
 #   bash scripts/update-cli.sh 2.114.0
 #
-# Fetches the SHA-512 of every platform package straight from the npm registry
-# and rewrites the version and checksum table. Bumping the CLI is then a
-# reviewable diff rather than a silent "latest".
+# Fetches each platform package's SHA-512 straight from the npm registry, so a
+# CLI upgrade is a reviewable diff of a data file rather than a silent "latest"
+# that behaves differently on a laptop than in CI.
 
-set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+source "$(dirname "${BASH_SOURCE[0]}")/lib/init.sh"
 
-VERSION="${1:?usage: update-cli.sh <version>}"
+VERSION="${1:-}"
+[[ -n "$VERSION" ]] || fail "Usage: bash scripts/update-cli.sh <version>"
+
 PLATFORMS=(darwin-arm64 darwin-x64 linux-arm64 linux-arm64-musl linux-x64 linux-x64-musl)
 
-command -v python3 >/dev/null 2>&1 \
-  || { echo "python3 is needed to decode the registry's base64 integrity hashes" >&2; exit 1; }
+require_cmd curl "to reach the npm registry"
 
-TABLE=""
-for plat in "${PLATFORMS[@]}"; do
-  echo "  fetching @supabase/cli-$plat@$VERSION ..." >&2
-  hash="$(curl -fsSL "https://registry.npmjs.org/@supabase/cli-${plat}/${VERSION}" \
-    | python3 -c '
-import sys, json, base64, binascii
-d = json.load(sys.stdin)
-algo, b64 = d["dist"]["integrity"].split("-", 1)
-assert algo == "sha512", algo
-print(binascii.hexlify(base64.b64decode(b64)).decode())
-')"
-  TABLE+="$(printf '    %-18s echo "%s" ;;\n' "${plat})" "$hash")"$'\n'
-done
+# The registry publishes integrity as base64; the lock file stores hex so the
+# comparison against sha512sum output is a plain string match.
+integrity_to_hex() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys,base64,binascii; print(binascii.hexlify(base64.b64decode(sys.stdin.read().strip())).decode())'
+  else
+    base64 -d 2>/dev/null | od -An -tx1 | tr -d " \n"
+  fi
+}
 
-python3 - "$VERSION" "$TABLE" <<'PY'
-import sys, re, pathlib
-version, table = sys.argv[1], sys.argv[2]
-p = pathlib.Path("scripts/_cli.sh"); s = p.read_text()
-s = re.sub(r'SUPABASE_CLI_VERSION="[^"]+"', f'SUPABASE_CLI_VERSION="{version}"', s)
-s = re.sub(r'(cli_checksum\(\) \{\n  case "\$1" in\n).*?(    \*\) echo "" ;;)',
-           lambda m: m.group(1) + table + m.group(2), s, flags=re.S)
-p.write_text(s)
-print(f"Pinned Supabase CLI {version}")
-PY
+fetch_checksum() {
+  local platform="$1" integrity
+  integrity="$(curl -fsSL "https://registry.npmjs.org/@supabase/cli-${platform}/${VERSION}" \
+    | sed -n 's/.*"integrity":"sha512-\([^"]*\)".*/\1/p' | head -1)"
+  [[ -n "$integrity" ]] || fail "No sha512 integrity for @supabase/cli-${platform}@${VERSION}"
+  printf '%s' "$integrity" | integrity_to_hex
+}
 
-echo "Now run: rm -rf .supabase-cli && ./supa --version"
+main() {
+  local tmp platform checksum
+  tmp="$(mktemp)"
+  {
+    echo "# Pinned Supabase CLI. Regenerate with: bash scripts/update-cli.sh <version>"
+    echo "# Checksums are the npm registry's own SHA-512 integrity hashes, hex-encoded."
+    echo "version=$VERSION"
+  } > "$tmp"
+
+  for platform in "${PLATFORMS[@]}"; do
+    dim "  fetching @supabase/cli-${platform}@${VERSION} ..."
+    checksum="$(fetch_checksum "$platform")"
+    echo "${platform}=${checksum}" >> "$tmp"
+  done
+
+  mv "$tmp" "$CLI_LOCK"
+  bold "Pinned Supabase CLI $VERSION in scripts/cli.lock"
+  dim  "Now run: rm -rf .supabase-cli && ./supa --version"
+}
+
+main "$@"

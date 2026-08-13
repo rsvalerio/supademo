@@ -1,40 +1,53 @@
 #!/usr/bin/env bash
-# Everything CI runs, in one command, all of it through the Supabase CLI.
+# Everything CI runs, in one command.
 #
-#   npm run verify
+#   make verify
 
-source "$(dirname "${BASH_SOURCE[0]}")/_cli.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/init.sh"
 
-require_stack
+verify_migrations() {
+  step "Replaying every migration against an empty database"
+  supa db reset
+}
 
-step "Replaying every migration against an empty database"
-supa db reset
+verify_schema() {
+  step "Schema lint"
+  supa db lint --local --level warning --fail-on warning
 
-step "Schema lint"
-supa db lint --local --level warning --fail-on warning
+  # Security findings block; performance findings are reported and left to
+  # judgement, since the right fix is often "not yet".
+  step "Security and performance advisors"
+  supa db advisors --local --type security --level warn --fail-on error
+  supa db advisors --local --type performance --level warn --fail-on none
+}
 
-# The same checks the dashboard's Security and Performance Advisors run:
-# tables without RLS, SECURITY DEFINER views, functions with a mutable
-# search_path, unindexed foreign keys. Cheaper to hear about here than in a
-# review.
-step "Security and performance advisors"
-supa db advisors --local --type security --level warn --fail-on error
-supa db advisors --local --type performance --level warn --fail-on none
+verify_tests() {
+  step "pgTAP suite"
+  supa test db --local
+}
 
-step "pgTAP suite"
-supa test db --local
+verify_functions() {
+  step "Edge functions"
+  bash scripts/functions.sh fmt --check
+  bash scripts/functions.sh check
+}
 
-# deno_run uses a local deno if there is one and the official image otherwise,
-# so this needs no toolchain either.
-step "Edge functions"
-deno_run fmt --check supabase/functions
-deno_run lint supabase/functions
-deno_run check supabase/functions/*/index.ts
+verify_types_are_current() {
+  step "Generated types are current"
+  bash scripts/types.sh
+  git diff --quiet -- packages/db-types/src/database.types.ts \
+    || fail "packages/db-types is stale. Commit the regenerated file."
+}
 
-step "Generated types are current"
-bash scripts/gen-types.sh
-if ! git diff --quiet -- packages/db-types/src/database.types.ts; then
-  fail "packages/db-types is stale. Commit the regenerated file."
-fi
+main() {
+  require_stack
+  verify_migrations
+  verify_schema
+  verify_tests
+  verify_functions
+  verify_types_are_current
 
-printf '\n\033[32mAll checks passed.\033[0m\n'
+  printf '\n%s%s%s\n' "$_C_GREEN" "All checks passed." "$_C_OFF"
+}
+
+main "$@"

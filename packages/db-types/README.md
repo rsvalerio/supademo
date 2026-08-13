@@ -3,8 +3,8 @@
 `src/database.types.ts` is **generated**. Never edit it.
 
 ```bash
-./x types            # from the repo root, against the local stack
-SUPABASE_PROJECT_REF=xxx ./x types   # against a hosted project
+make types            # from the repo root, against the local stack
+SUPABASE_PROJECT_REF=xxx make types   # against a hosted project
 ```
 
 Regenerate after every migration. CI fails if the committed file is stale

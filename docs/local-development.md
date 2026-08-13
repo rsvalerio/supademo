@@ -13,22 +13,22 @@ You do **not** need Node, npm, a global Supabase CLI, Postgres, or `psql`.
 (Node only becomes relevant when a frontend lands in `apps/`.) On Windows, run
 this from WSL.
 
-`./x doctor` reports exactly what is present and what is missing, checks the
+`make doctor` reports exactly what is present and what is missing, checks the
 ports the stack wants, and exits non-zero if a hard requirement is absent — so
 it works as a preflight check in a script too. The scripts also check for
-themselves: `./x start` and friends fail with a plain message if the Docker
+themselves: `make start` and friends fail with a plain message if the Docker
 daemon is not running, rather than surfacing a socket error.
 
 ## First run
 
 ```bash
-./x setup
+make setup
 ```
 
 That checks Docker, creates `.env`, boots the stack (`supabase start`), applies
 every migration and seed file (`supabase db reset`), seeds the Vault entries
 scheduled jobs need, generates types, and prints everything below.
-`./x help` lists the tasks; `./supa <command>` is the raw CLI. See
+`make help` lists the tasks; `./supa <command>` is the raw CLI. See
 [`supabase-cli.md`](supabase-cli.md) for the full tour.
 
 The important local URLs:
@@ -42,7 +42,7 @@ The important local URLs:
 
 Every auth email lands in Inbucket. Nothing is sent to a real address locally.
 
-`./x status` reprints these at any time; `./supa status -o env` gives the
+`make status` reprints these at any time; `./supa status -o env` gives the
 same thing machine-readably, which is how the scripts read the anon and service
 keys.
 
@@ -52,33 +52,33 @@ keys.
 
 ```bash
 git clone <repo> && cd supademo
-./x doctor      # optional: what is present, what is missing, what ports are busy
-./x setup       # everything else
+make doctor      # optional: what is present, what is missing, what ports are busy
+make setup       # everything else
 ```
 
-`./x setup` is idempotent. Run it again any time; it will not duplicate
+`make setup` is idempotent. Run it again any time; it will not duplicate
 anything.
 
 ### Every day
 
 ```bash
-./x start       # ~30s cold, a few seconds warm
+make start       # ~30s cold, a few seconds warm
 … work …
-./x stop        # or leave it running
+make stop        # or leave it running
 ```
 
-`./x stop` keeps the data volume, so the next `start` has your data. To throw
+`make stop` keeps the data volume, so the next `start` has your data. To throw
 it away, `./supa stop --no-backup`.
 
 ### Making a schema change
 
 ```bash
-./x new add_widget_table     # creates supabase/migrations/<timestamp>_add_widget_table.sql
+make new name=add_widget_table     # creates supabase/migrations/<timestamp>_add_widget_table.sql
 $EDITOR supabase/migrations/*_add_widget_table.sql
-./x reset                    # replay everything from empty, then seed
-./x types                    # regenerate packages/db-types
-./x test                     # pgTAP
-./x advisors                 # did the new table forget RLS?
+make reset                    # replay everything from empty, then seed
+make types                    # regenerate packages/db-types
+make test                     # pgTAP
+make advisors                 # did the new table forget RLS?
 ```
 
 Always `reset`, never "apply just the new one". Replaying from empty is the only
@@ -97,16 +97,16 @@ you meant.
 ### Working on edge functions
 
 ```bash
-./x serve                    # hot-reloads on save
+make serve                    # hot-reloads on save
 # in another shell:
 curl http://127.0.0.1:54321/functions/v1/health
-./x check                    # lint + typecheck
+make check                    # lint + typecheck
 ```
 
 ### Before pushing
 
 ```bash
-./x verify
+make verify
 ```
 
 That is exactly what CI runs: reset, lint, advisors, pgTAP, function checks, and
@@ -117,14 +117,14 @@ same scripts through the same pinned CLI.
 
 ```bash
 ./supa stop --no-backup      # drop the data volume
-./x setup                    # rebuild from migrations + seed
+make setup                    # rebuild from migrations + seed
 ```
 
 Cheap by design. Nothing local is precious — the seed rebuilds it.
 
 ### Where state actually lives
 
-| State | Lives in | Survives `./x stop`? | Survives `--no-backup`? |
+| State | Lives in | Survives `make stop`? | Survives `--no-backup`? |
 | --- | --- | --- | --- |
 | Your schema | `supabase/migrations/` (git) | yes | yes |
 | Fixture data | `supabase/seeds/` (git) | yes | yes |
@@ -162,15 +162,15 @@ reset.
 
 ```bash
 # 1. Write a migration
-./x new add_widget_table
+make new name=add_widget_table
 
 # 2. Apply it from scratch — always from scratch, never incrementally
-./x reset
+make reset
 
 # 3. Regenerate types and run the checks
-./x types
-./x test
-./x advisors
+make types
+make test
+make advisors
 ```
 
 `db:reset` re-runs everything from empty. That is the point: it is the only way
@@ -184,26 +184,26 @@ committing — the diff tool captures what changed, not what you meant.
 ## Useful commands
 
 ```bash
-./x verify           # everything CI runs
-./x lint          # typing errors in functions and views
-./x advisors      # the dashboard's Security + Performance advisors
+make verify           # everything CI runs
+make lint          # typing errors in functions and views
+make advisors      # the dashboard's Security + Performance advisors
 ./supa migration list          # local vs remote migration history
 ./supa inspect db table-stats --local       # table stats (see `supabase inspect db --help` for more)
-./x test          # pgTAP suite
-./x serve  # serve all edge functions on :54321/functions/v1
-./x status           # local URLs and keys
+make test          # pgTAP suite
+make serve  # serve all edge functions on :54321/functions/v1
+make status           # local URLs and keys
 ```
 
 Ad-hoc SQL without a Postgres client installed:
 
 ```bash
-./x query "select id, name, price_cents from api.plans order by sort_order"
+make query sql="select id, name, price_cents from api.plans order by sort_order"
 ```
 
 ## Edge functions
 
 ```bash
-./x serve
+make serve
 ```
 
 That creates `supabase/functions/.env.local` from `.env.example` on first run —
@@ -223,7 +223,7 @@ curl http://127.0.0.1:54321/functions/v1/health
 # The share endpoint (demoacme002 is seeded, shared by link)
 curl 'http://127.0.0.1:54321/functions/v1/public-demo?id=demoacme002'
 
-# Authenticated — the anon key comes from `./x status`
+# Authenticated — the anon key comes from `make status`
 curl -X POST http://127.0.0.1:54321/functions/v1/embed-document \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
   -H 'Content-Type: application/json' \
@@ -243,16 +243,16 @@ PL/pgSQL body, which is not name-resolved until it runs.
 Check what you actually got:
 
 ```bash
-./x query "select extname from pg_extension order by 1"
-./x query "select app.extension_enabled('pgmq')"
+make query sql="select extname from pg_extension order by 1"
+make query sql="select app.extension_enabled('pgmq')"
 ```
 
-`./x setup` already seeds the two Vault secrets `pg_cron` needs to call an
+`make setup` already seeds the two Vault secrets `pg_cron` needs to call an
 edge function. To redo it after a reset:
 
 ```bash
-bash scripts/bootstrap-secrets.sh            # local
-bash scripts/bootstrap-secrets.sh --linked   # a linked project
+bash scripts/secrets.sh            # local
+bash scripts/secrets.sh --linked   # a linked project
 ```
 
 ## Auth hooks
@@ -262,13 +262,13 @@ verification) are on by default and need no setup. Check the claims your token
 actually carries:
 
 ```bash
-./x query "select auth_hooks.custom_access_token(jsonb_build_object(
+make query sql="select auth_hooks.custom_access_token(jsonb_build_object(
   'user_id', '00000000-0000-4000-a000-000000000001', 'claims', '{}'::jsonb))"
 ```
 
 The Send Email hook ships **disabled**. Enabling it without a deployed function
 stops auth email entirely. To turn it on: set `AUTH_HOOK_SECRET`, run
-`./x serve`, then flip `enabled = true` under
+`make serve`, then flip `enabled = true` under
 `[auth.hook.send_email]` and restart the stack.
 
 ## Troubleshooting
@@ -281,8 +281,8 @@ have already pushed, write a new migration.
 policy for that role. Studio's Table Editor shows both, or:
 
 ```bash
-./x query "select grantee, privilege_type from information_schema.role_table_grants where table_name = 'X'"
-./x query "select policyname, cmd, roles, qual from pg_policies where tablename = 'X'"
+make query sql="select grantee, privilege_type from information_schema.role_table_grants where table_name = 'X'"
+make query sql="select policyname, cmd, roles, qual from pg_policies where tablename = 'X'"
 ```
 
 **`new row violates row-level security policy`** — the `WITH CHECK` failed. The
@@ -293,12 +293,12 @@ or wrong `organization_id`.
 has to be subscribed to the right topic. Broadcast topics are `org:<uuid>`; the
 RLS policy on `realtime.messages` rejects anything else.
 
-**Types look stale.** They are. `./x types` after every migration; CI
+**Types look stale.** They are. `make types` after every migration; CI
 fails on a stale file.
 
 **Port already in use.** Another project's stack is running. `./supa stop
 --project-id <other>` stops it, or change the ports in `config.toml`.
 
-**A container will not come up.** `./x status` shows what is missing and
+**A container will not come up.** `make status` shows what is missing and
 `./supa services` shows image versions. `./supa stop --no-backup` throws the data
 volume away and starts over — the seed makes that cheap.
