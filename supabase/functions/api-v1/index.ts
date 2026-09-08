@@ -24,7 +24,12 @@
 
 import { HttpError, json, serveJson } from "../_shared/http.ts";
 import { adminClient } from "../_shared/supabase.ts";
-import { type ApiIdentity, apiJson, type ApiScope, requireApiIdentity } from "../_shared/api-auth.ts";
+import {
+  type ApiIdentity,
+  apiJson,
+  type ApiScope,
+  requireApiIdentity,
+} from "../_shared/api-auth.ts";
 import { remember, replay } from "../_shared/idempotency.ts";
 
 /** Strips the function prefix so routing works locally and when deployed. */
