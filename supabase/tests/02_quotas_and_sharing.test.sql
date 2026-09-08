@@ -11,7 +11,7 @@ begin;
 create extension if not exists pgtap;
 set local search_path to public, extensions;
 
-select plan(13);
+select plan(14);
 
 -- Restores the session after impersonating. `reset role` alone is not enough:
 -- set_config(..., is_local => true) lasts until the transaction ends, so the
