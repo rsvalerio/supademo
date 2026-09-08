@@ -27,7 +27,17 @@ format_functions() { deno_run fmt "$@" supabase/functions; }
 
 check_functions() {
   deno_run lint supabase/functions
-  deno_run check supabase/functions/*/index.ts
+
+  # --config is required because deno discovers a config file from the working
+  # directory, which is the repo root, while the import map lives in
+  # supabase/functions/deno.json. Without it the bare specifiers
+  # ("@supabase/supabase-js", "stripe") do not resolve and check fails before
+  # type-checking anything.
+  #
+  # Deliberately not passed to fmt or lint above: they need no import map, and
+  # the config also sets lineWidth 100 against deno's default 80, so applying it
+  # there would reformat every function file as a side effect of a typecheck fix.
+  deno_run check --config supabase/functions/deno.json supabase/functions/*/index.ts
 }
 
 assert_visibility_matches_config() {
