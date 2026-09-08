@@ -76,8 +76,12 @@ export function serveJson(handler: (req: Request) => Promise<Response>): void {
     } catch (err) {
       if (err instanceof HttpError) {
         // A 429 without Retry-After makes every client guess, and they guess
-        // badly — usually by retrying immediately.
-        const headers = err.retryAfter ? { "Retry-After": String(err.retryAfter) } : {};
+        // badly — usually by retrying immediately. The annotation is
+        // load-bearing: without it the ternary widens to include
+        // `{ "Retry-After"?: undefined }`, which HeadersInit rejects.
+        const headers: Record<string, string> = err.retryAfter
+          ? { "Retry-After": String(err.retryAfter) }
+          : {};
         return json(req, { error: err.message, code: err.code }, err.status, headers);
       }
       console.error("unhandled error", err);
