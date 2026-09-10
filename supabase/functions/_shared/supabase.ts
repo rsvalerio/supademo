@@ -51,33 +51,7 @@ export async function requireUser(req: Request) {
   return { client, user: data.user };
 }
 
-/**
- * Resolves the caller's organization from an `x-supademo-api-key` header.
- * Used by the machine-facing endpoints, where there is no user session.
- */
-export async function requireApiKey(req: Request) {
-  const presented = req.headers.get("x-supademo-api-key");
-  if (!presented) throw new HttpError(401, "Missing x-supademo-api-key header");
-
-  const admin = adminClient();
-  const { data, error } = await admin.rpc("verify_api_key", { p_key: presented });
-  if (error) {
-    console.error("verify_api_key failed", error);
-    throw new HttpError(500, "Could not verify API key");
-  }
-
-  const match = Array.isArray(data) ? data[0] : data;
-  if (!match) throw new HttpError(401, "Invalid or expired API key");
-
-  return {
-    admin,
-    organizationId: match.organization_id as string,
-    scopes: (match.scopes ?? []) as string[],
-  };
-}
-
-export function requireScope(scopes: string[], needed: string): void {
-  if (!scopes.includes(needed) && !scopes.includes("*")) {
-    throw new HttpError(403, `API key is missing the "${needed}" scope`);
-  }
-}
+// API-key authentication lives in ./api-auth.ts. It is not here because it is
+// not a client factory: it is an authorization decision the database makes,
+// and putting it beside createClient invited callers to treat "I have an
+// admin client" and "I know who is asking" as the same thing.

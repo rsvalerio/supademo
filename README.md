@@ -41,7 +41,8 @@ dropped in later without moving anything.
 | Cron | `pg_cron` schedules for rollups and workers | `..._cron.sql` |
 | Webhooks | `pg_net` outbound delivery with retries | `..._queues.sql` |
 | Vault | Encrypted secrets for outbound integrations | `..._queues.sql` |
-| API | PostgREST views, RPC, API keys for machines | `..._rpc.sql` |
+| API | PostgREST views, RPC, curated `api` schema | `..._api_surface.sql` |
+| API | Machine auth: hashed keys, scopes, rate limits, audit | `..._api_authentication.sql`, `docs/api-authentication.md` |
 | Testing | pgTAP unit + RLS tests | `supabase/tests/` |
 | Tooling | Typed clients generated from the schema | `packages/db-types/` |
 | Tooling | CLI-driven: start, reset, lint, advisors, gen types, deploy | `docs/supabase-cli.md` |

@@ -11,7 +11,17 @@ begin;
 create extension if not exists pgtap;
 set local search_path to public, extensions;
 
-select plan(13);
+select plan(14);
+
+-- Restores the session after impersonating. `reset role` alone is not enough:
+-- set_config(..., is_local => true) lasts until the transaction ends, so the
+-- JWT claims would linger and later assertions would silently run as that user.
+create or replace function pg_temp.deimpersonate()
+returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '', true);
+end $$;
 
 create or replace function pg_temp.claims(p_uid text, p_email text)
 returns text language sql immutable as $$
@@ -29,10 +39,10 @@ begin
   perform set_config('request.jwt.claims', pg_temp.claims(p_uid, p_email), true);
   execute case when p_uid is null then 'set local role anon' else 'set local role authenticated' end;
   execute p_sql into result;
-  reset role;
+  perform pg_temp.deimpersonate();
   return result;
 exception when others then
-  reset role;
+  perform pg_temp.deimpersonate();
   raise;
 end $$;
 
@@ -42,10 +52,10 @@ begin
   perform set_config('request.jwt.claims', pg_temp.claims(p_uid, p_email), true);
   execute case when p_uid is null then 'set local role anon' else 'set local role authenticated' end;
   execute p_sql;
-  reset role;
+  perform pg_temp.deimpersonate();
   return null;
 exception when others then
-  reset role;
+  perform pg_temp.deimpersonate();
   return sqlstate;
 end $$;
 

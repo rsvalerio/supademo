@@ -1,0 +1,92 @@
+# TEMPORARY — delete this file once packages/db-types holds real generated
+# output. See docs/ci-types-bootstrap.md for what this is and how to remove it.
+#
+# packages/db-types/src/database.types.ts ships as a placeholder so a fresh
+# clone type-checks before anyone has booted the database. CI's "Check
+# generated types are current" step regenerates the real file and diffs it,
+# which can never match a placeholder — so that check fails on every branch,
+# including the default one, until somebody runs `make types` against a live
+# stack and commits the result.
+#
+# This workflow does that once, from CI, for the case where no one has a
+# machine that can boot the stack. It is manual-only: `workflow_dispatch` and
+# nothing else, so it never fires on a push or a pull request.
+
+name: Bootstrap generated types (temporary)
+
+on:
+  workflow_dispatch:
+
+# The only job in this repository that writes to the repository. That is the
+# whole reason it is a separate, manually-triggered file rather than a step
+# inside ci.yml: the permission is visible, scoped to this workflow, and goes
+# away when the file is deleted.
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-types-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Regenerate and commit database.types.ts
+    runs-on: ubuntu-latest
+    steps:
+      # workflow_dispatch checks out the dispatched ref as a real branch, which
+      # is what makes the push at the end possible. persist-credentials is on by
+      # default and supplies the token that push uses.
+      - uses: actions/checkout@v4
+
+      - name: Cache the pinned toolchain
+        uses: actions/cache@v4
+        with:
+          path: .toolchain
+          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/toolchain.lock') }}
+
+      # Same two steps ci.yml runs before it generates types. `start` alone is
+      # not enough: the schema only exists after `db reset` replays every
+      # migration into the fresh database.
+      - name: Start the local stack
+        run: ./supa start
+
+      - name: Apply every migration
+        run: ./supa db reset
+
+      - name: Regenerate the types file
+        run: |
+          ./supa gen types --local --schema public,api \
+            > packages/db-types/src/database.types.ts
+          echo "Generated $(wc -l < packages/db-types/src/database.types.ts) lines."
+
+      - name: Commit and push if it changed
+        run: |
+          if git diff --quiet -- packages/db-types/src/database.types.ts; then
+            echo "Types already match the schema; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Only ever this one path. A bare `git add -A` here would sweep up
+          # whatever the stack left in the working tree and commit it blind.
+          git add packages/db-types/src/database.types.ts
+          git commit -m "Generate database.types.ts from the live schema
+
+          Replaces the committed placeholder with real output from
+          \`supabase gen types\`, produced by the temporary
+          bootstrap-types workflow. This is what CI's \"Check generated
+          types are current\" step has been comparing against and failing
+          on, on every branch including the default one.
+
+          Regenerate with \`make types\` from now on. The workflow that
+          produced this commit should be deleted; see
+          docs/ci-types-bootstrap.md."
+
+          git push origin HEAD:${{ github.ref_name }}
+          echo "Pushed to ${{ github.ref_name }}."
+
+      - name: Stop the stack
+        if: always()
+        run: ./supa stop

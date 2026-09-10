@@ -48,7 +48,9 @@ async function verifySignature(req: Request, body: string): Promise<void> {
   // Reject anything older than five minutes, so a captured request cannot be
   // replayed later.
   const age = Math.abs(Date.now() / 1000 - Number(timestamp));
-  if (!Number.isFinite(age) || age > 300) throw new HttpError(401, "Signature timestamp out of range");
+  if (!Number.isFinite(age) || age > 300) {
+    throw new HttpError(401, "Signature timestamp out of range");
+  }
 
   const rawSecret = secret.replace(/^v1,\s*/, "").replace(/^whsec_/, "");
   const key = await crypto.subtle.importKey(

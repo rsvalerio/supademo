@@ -29,8 +29,9 @@ Suggested order, and why:
 
 **Ready to build on what exists**
 
-- **Rate limiting per API key.** `api_keys.last_used_at` is already maintained;
-  a counter table plus a check in `verify_api_key` is most of it.
+- **`leads:read` and `projects:read` endpoints.** Both scopes are defined and
+  validated but no route consumes them yet — the smallest possible next slice
+  of the machine API.
 - **Export jobs.** The `exports` bucket and its policies exist and nothing
   writes to them yet. A queue message, a worker, a signed URL in a notification.
 - **More domain events.** `private.dispatch_event()` fans out to subscribed

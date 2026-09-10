@@ -22,7 +22,13 @@ deno_run() {
   if on_path="$(path_tool_matching deno "$(deno_version)")"; then
     "$on_path" "$@"
   elif docker_available; then
-    docker run --rm -v "$ROOT":"$ROOT" -w "$ROOT" "$(deno_image)" "$@"
+    # --entrypoint deno, rather than letting the image's entrypoint script
+    # decide. That script prepends `deno` only for subcommands on a list it
+    # carries, and `check` is not on it, so `functions.sh check` exec'd a
+    # binary named "check" and exited 127 — while fmt and lint, which are on
+    # the list, worked. Overriding the entrypoint makes this branch run
+    # `deno "$@"`, exactly like the local-deno branch above.
+    docker run --rm -v "$ROOT":"$ROOT" -w "$ROOT" --entrypoint deno "$(deno_image)" "$@"
   else
     warn "No deno $(deno_version) and no running Docker; skipping edge function checks."
     return 0

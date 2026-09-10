@@ -48,6 +48,9 @@ export function json(req: Request, body: unknown, status = 200, extra: HeadersIn
 
 /** A failure the caller is allowed to see. Anything else becomes a generic 500. */
 export class HttpError extends Error {
+  /** Seconds, set on 429s so the response can carry Retry-After. */
+  retryAfter?: number;
+
   constructor(readonly status: number, message: string, readonly code?: string) {
     super(message);
     this.name = "HttpError";
@@ -72,7 +75,14 @@ export function serveJson(handler: (req: Request) => Promise<Response>): void {
       return await handler(req);
     } catch (err) {
       if (err instanceof HttpError) {
-        return json(req, { error: err.message, code: err.code }, err.status);
+        // A 429 without Retry-After makes every client guess, and they guess
+        // badly — usually by retrying immediately. The annotation is
+        // load-bearing: without it the ternary widens to include
+        // `{ "Retry-After"?: undefined }`, which HeadersInit rejects.
+        const headers: Record<string, string> = err.retryAfter
+          ? { "Retry-After": String(err.retryAfter) }
+          : {};
+        return json(req, { error: err.message, code: err.code }, err.status, headers);
       }
       console.error("unhandled error", err);
       return json(req, { error: "Internal server error" }, 500);

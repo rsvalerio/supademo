@@ -53,7 +53,7 @@ parent. Writing a mismatched pair is a constraint violation, not a silent leak.
 | --- | --- | --- |
 | Signed-in user | Supabase JWT | RLS, via `auth.uid()` |
 | Anonymous viewer | none | `SECURITY DEFINER` RPCs that re-derive the tenant from the share id |
-| Machine | `x-supademo-api-key` | `public.verify_api_key()`, service-role only |
+| Machine | API key (`Authorization: Bearer sk_…`) | `public.authenticate_api_key()` — scope, per-minute budget, audit; see [`api-authentication.md`](api-authentication.md) |
 
 An anonymous viewer never writes to a table directly. `track_demo_view` and
 `capture_demo_lead` take a share id, look up which organization it belongs to,
