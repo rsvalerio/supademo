@@ -11,7 +11,7 @@ begin;
 create extension if not exists pgtap;
 set local search_path to public, extensions;
 
-select plan(14);
+select plan(16);
 
 -- 1. Every table in `public` has RLS enabled. This is the single check most
 --    likely to catch a real leak in a future migration.
@@ -84,7 +84,9 @@ select is(
 
 select has_table('public', 'organizations', 'organizations exists');
 select has_table('public', 'organization_members', 'organization_members exists');
-select has_table('public', 'demos', 'demos exists');
+select has_table('public', 'products', 'products exists');
+select has_table('public', 'orders', 'orders exists');
+select has_table('public', 'inventory_movements', 'inventory_movements exists');
 select has_table('public', 'subscriptions', 'subscriptions exists');
 
 -- Checked against the catalog rather than pgTAP's has_function(), whose

@@ -189,7 +189,9 @@ verify_jwt = false
 [functions.auth-email-hook]
 verify_jwt = false
 
-[functions.public-demo]
+# The API key is the credential; there is no Supabase JWT to verify. Every
+# route authenticates through public.authenticate_api_key().
+[functions.api-v1]
 verify_jwt = false
 
 [functions.billing-portal]

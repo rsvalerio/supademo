@@ -29,13 +29,20 @@ export function hasRole(actual: OrgRole | null | undefined, minimum: OrgRole): b
  * corresponding policy in `supabase/migrations`; see `docs/rls.md` for the map.
  */
 export const CAPABILITIES = {
-  "demo:read": "viewer",
-  "demo:comment": "viewer",
-  "demo:write": "member",
-  "demo:publish": "member",
-  "demo:delete": "admin",
-  "project:write": "member",
-  "project:delete": "admin",
+  "catalogue:read": "viewer",
+  "product:write": "member",
+  "product:delete": "admin",
+  "ingredient:write": "member",
+  "ingredient:delete": "admin",
+  // Appending to the ledger is a member's job; there is no edit capability
+  // because there is no way to edit a ledger.
+  "inventory:append": "member",
+  "order:read": "viewer",
+  "order:place": "member",
+  "order:cancel": "member",
+  "customer:write": "member",
+  // Anonymizing is irreversible, so it sits with the same role that can delete.
+  "customer:anonymize": "admin",
   "member:invite": "admin",
   "member:remove": "admin",
   "billing:manage": "admin",

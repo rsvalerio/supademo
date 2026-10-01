@@ -41,7 +41,8 @@ recursing into themselves, and it means the rule exists in exactly one place.
 
 ### Tenant id is denormalized, and cannot drift
 
-Child tables (`demo_steps`, `demo_comments`, `demo_leads`, `document_sections`)
+Child tables (`product_ingredients`, `inventory_movements`, `order_items`,
+`document_sections`)
 carry their own `organization_id`, so every policy is a single-table predicate
 rather than a join. The usual objection — denormalized columns go stale — is
 answered by a composite foreign key against `(id, organization_id)` on the
@@ -52,34 +53,40 @@ parent. Writing a mismatched pair is a constraint violation, not a silent leak.
 | Caller | Identity | Enforced by |
 | --- | --- | --- |
 | Signed-in user | Supabase JWT | RLS, via `auth.uid()` |
-| Anonymous viewer | none | `SECURITY DEFINER` RPCs that re-derive the tenant from the share id |
-| Machine | `x-supademo-api-key` | `public.verify_api_key()`, service-role only |
+| Anonymous shopper | none | RLS, plus narrowed column grants — the catalogue only |
+| Machine | API key (`Authorization: Bearer sk_…`) | `public.authenticate_api_key()` — scope, per-minute budget, audit; see [`api-authentication.md`](api-authentication.md) |
 
-An anonymous viewer never writes to a table directly. `track_demo_view` and
-`capture_demo_lead` take a share id, look up which organization it belongs to,
-and write on the caller's behalf — so traffic cannot be attributed to an
-organization the caller does not already have a link to.
+An anonymous caller reads and never writes. There is no RPC that lets an
+unauthenticated caller place an order or touch the ledger, which is the reason
+the anonymous path is one line in that table rather than a section of its own.
 
-### Link-sharing is not listing
+### A tenant boundary that survives service_role
 
-`visibility` has three values, and the middle one is the interesting one.
-`public` demos are visible to `anon` through an ordinary RLS policy and appear
-in `api.demo_directory`. `link` demos are visible to nobody through RLS at all;
-they are reachable only via `public.get_public_demo(share_id)`, which returns
-`NULL` for both "no such demo" and "not shared". Holding a link is therefore
-never a licence to enumerate, and probing cannot distinguish a wrong id from an
-unshared one.
+The interesting failure mode is not a missing policy, it is a path where
+policies do not apply. An edge function runs as `service_role`, which bypasses
+RLS entirely, so for the machine API the boundary cannot be a policy — it is
+the *signature* of every function the edge layer may call. Each one takes
+`p_organization_id` as its first argument and filters by it, and the
+organization id comes from the key the caller presented, never from the request
+body. `public.place_order()` resolving a sku is the example to read: the
+`WHERE` clause is scoped to the organization, so naming another tenant's sku
+returns "no such product" rather than reaching across.
+
+This is also why `service_role` keys never leave the server. If a client
+appears to need one, the missing piece is an RPC or an edge function.
 
 ### Two realtime mechanisms, deliberately
 
-Postgres Changes is used for the four collaborative, low-volume tables
-(`demos`, `demo_steps`, `demo_comments`, `notifications`) where per-row
-filtering per subscriber is affordable. Broadcast on a private `org:<uuid>`
+Postgres Changes is used for the low-volume tables (`orders`, `notifications`)
+where per-row filtering per subscriber is affordable — a packing screen wants a
+new order the moment it is confirmed. Broadcast on a private `org:<uuid>`
 topic is used for everything that has to scale: one RLS check on
 `realtime.messages` authorizes the whole stream instead of re-filtering every
-row for every listener. `demo_steps` and `demo_comments` also carry
-`REPLICA IDENTITY FULL` so subscribers get the previous row on update and can
-reconcile a change they did not originate.
+row for every listener. `orders` also carries `REPLICA IDENTITY FULL` so
+subscribers get the previous row on update and can reconcile a change they did
+not originate. `order_items` deliberately stays out of the publication: a
+subscriber gets the order and reads its lines, rather than receiving the same
+sale twice in two shapes.
 
 ### Slow work never happens in the request path
 
@@ -124,7 +131,7 @@ scores to be comparable.
 ```
 avatars        users/<user_id>/<filename>
 org-branding   orgs/<organization_id>/<filename>
-demo-assets    orgs/<organization_id>/demos/<demo_id>/<filename>
+product-media  orgs/<organization_id>/products/<product_id>/<filename>
 exports        orgs/<organization_id>/<job_id>.<ext>
 ```
 
@@ -133,8 +140,18 @@ membership. That makes every storage check a prefix comparison rather than a
 join. Build paths with the helpers in `@supademo/shared` — an ad-hoc path is a
 silent 403.
 
-`demo-assets` is private. Anonymous viewers of a shared demo never touch the
-bucket: the `public-demo` function mints short-lived signed URLs server-side.
+`product-media` is private even though the catalogue is not: a product can be
+listed anonymously while its spec sheets and label artwork stay behind a signed
+URL minted server-side.
+
+A fifth bucket, `demo-assets`, is still declared by migration 0700 and still
+appears after a reset. It is retired, not in use: every policy that referenced
+it was removed in 1900, so nothing but `service_role` can reach it. It is still
+there because `delete from storage.buckets` is refused — correctly. A bucket
+row is metadata about objects stored outside Postgres, so deleting the row in
+SQL would orphan the files, and the database cannot know whether that is what
+anyone wanted. Bucket lifecycle belongs to the Storage API, which is also why
+0700 is the only place a bucket is declared and why it upserts.
 Public buckets serve transformed images (`publicAssetUrl(..., {width})`), which
 is cheaper than generating and storing thumbnails.
 
