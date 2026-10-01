@@ -29,9 +29,6 @@ Suggested order, and why:
 
 **Ready to build on what exists**
 
-- **The commerce routes on `api-v1`.** The RPCs exist and are tested; the
-  scopes are defined and validated; no route consumes them yet. This is the
-  smallest possible next slice, and the one the domain was built for.
 - **Carts and fulfilment.** `order_status` has `pending` and `fulfilled` values
   that nothing currently sets: today `place_order()` goes straight to
   `confirmed`. A cart that reserves stock without consuming it is the

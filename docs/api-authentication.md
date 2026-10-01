@@ -153,14 +153,46 @@ traffic lands on the same bill as everything else.
 curl https://<project>.supabase.co/functions/v1/api-v1/whoami \
   -H "Authorization: Bearer sk_a1b2c3d4_…"
 
-curl -X PUT .../api-v1/documents/<source_id> \
+# The catalogue
+curl .../api-v1/products?status=active
+
+# Upsert a product by sku — a sync job can re-run this and converge
+curl -X PUT .../api-v1/products/CAKE \
   -H "Authorization: Bearer sk_a1b2c3d4_…" \
-  -d '{"title": "Allergen policy", "content": "…"}'
+  -d '{"name": "Sponge cake", "price_cents": 500, "status": "active"}'
+
+# The recipe is replaced wholesale, never patched
+curl -X PUT .../api-v1/products/CAKE/recipe \
+  -H "Authorization: Bearer sk_a1b2c3d4_…" \
+  -d '{"lines": [{"ingredient_sku": "FLOUR", "quantity": 50}]}'
+
+# Place an order. Send an Idempotency-Key: a retry must not sell twice.
+curl -X POST .../api-v1/orders \
+  -H "Authorization: Bearer sk_a1b2c3d4_…" \
+  -H "Idempotency-Key: order-2026-10-01-0041" \
+  -d '{"customer_email": "buyer@example.test",
+       "lines": [{"sku": "CAKE", "quantity": 2}]}'
+
+# Who has to be called after an allergen correction
+curl .../api-v1/recalls/nuts
 ```
 
-The commerce routes are not wired up yet — the domain and its RPCs landed
-first, and a route to a function that does not exist is worse than no route.
-`/whoami` and the documents upsert are what this surface serves today.
+Nothing above is addressed by a uuid. A sku, an order number and an email are
+handles the caller already has, and a handle that is only unique *within* an
+organization cannot be used to probe across one.
+
+Three routes are deliberately missing, and the absences are the design:
+
+- There is no way to set `products.allergens`. It is derived from the recipe;
+  the endpoint returns `422` rather than accepting a value the database would
+  refuse.
+- There is no way to write a `consumption` or `release` stock movement.
+  `POST /stock/:sku/movements` takes receipts, waste and adjustments only —
+  consumption belongs to `place_order()`, and an endpoint that could forge one
+  would let the ledger drift from the orders it is supposed to explain.
+- There is no way to assemble an order line by line. `POST /orders` is one
+  call, because the lock ordering, the stock check and the price snapshot are a
+  sequence a client must not be able to interleave with anything else.
 
 Both header forms work. `Authorization: Bearer` is what most HTTP clients reach
 for; `x-supademo-api-key` exists because Supabase's own gateway also reads
