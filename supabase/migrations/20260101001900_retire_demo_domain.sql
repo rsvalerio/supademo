@@ -83,15 +83,6 @@ drop function if exists public.demo_analytics(uuid, timestamptz);
 drop function if exists public.track_demo_view(text, uuid, integer, boolean, integer, text, text, text);
 drop function if exists public.capture_demo_lead(text, text, text, jsonb, uuid);
 
--- --- Trigger functions ------------------------------------------------------
--- The triggers themselves go when their tables do; these are the functions the
--- triggers pointed at, which would otherwise linger as unreferenced code.
-
-drop function if exists private.tg_demo_defaults();
-drop function if exists private.tg_enforce_project_quota();
-drop function if exists private.tg_notify_on_comment();
-drop function if exists private.tg_dispatch_demo_events();
-
 -- --- Storage ----------------------------------------------------------------
 -- `demo-assets` becomes `product-media`: same shape (private, members read and
 -- write their own organization's prefix), same path convention with a different
@@ -335,6 +326,22 @@ drop table if exists public.demo_comments;
 drop table if exists public.demo_steps;
 drop table if exists public.demos;
 drop table if exists public.projects;
+
+-- --- Trigger functions ------------------------------------------------------
+-- These come *after* the tables, not before. A trigger depends on the function
+-- it calls, so while `demos` still exists `drop function tg_demo_defaults()`
+-- is refused with 2BP01 — the trigger is holding it. Dropping the table takes
+-- its triggers with it and leaves these functions unreferenced, which is when
+-- they can go.
+--
+-- The alternative is `drop function ... cascade`, which drops the trigger for
+-- you. This file does not use cascade anywhere, for the reason given at the
+-- top: it would also silently drop a dependent nobody listed.
+
+drop function if exists private.tg_demo_defaults();
+drop function if exists private.tg_enforce_project_quota();
+drop function if exists private.tg_notify_on_comment();
+drop function if exists private.tg_dispatch_demo_events();
 
 drop type if exists public.demo_status;
 drop type if exists public.demo_visibility;
