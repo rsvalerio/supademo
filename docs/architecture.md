@@ -143,6 +143,15 @@ silent 403.
 `product-media` is private even though the catalogue is not: a product can be
 listed anonymously while its spec sheets and label artwork stay behind a signed
 URL minted server-side.
+
+A fifth bucket, `demo-assets`, is still declared by migration 0700 and still
+appears after a reset. It is retired, not in use: every policy that referenced
+it was removed in 1900, so nothing but `service_role` can reach it. It is still
+there because `delete from storage.buckets` is refused — correctly. A bucket
+row is metadata about objects stored outside Postgres, so deleting the row in
+SQL would orphan the files, and the database cannot know whether that is what
+anyone wanted. Bucket lifecycle belongs to the Storage API, which is also why
+0700 is the only place a bucket is declared and why it upserts.
 Public buckets serve transformed images (`publicAssetUrl(..., {width})`), which
 is cheaper than generating and storing thumbnails.
 

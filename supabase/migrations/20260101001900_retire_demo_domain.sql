@@ -84,16 +84,32 @@ drop function if exists public.track_demo_view(text, uuid, integer, boolean, int
 drop function if exists public.capture_demo_lead(text, text, text, jsonb, uuid);
 
 -- --- Storage ----------------------------------------------------------------
--- `demo-assets` becomes `product-media`: same shape (private, members read and
--- write their own organization's prefix), same path convention with a different
--- second segment —
+-- `product-media` takes over from `demo-assets`: same shape (private, members
+-- read and write their own organization's prefix), same path convention with a
+-- different second segment —
 --
 --   product-media  orgs/<organization_id>/products/<product_id>/<filename>
 --
--- A bucket id cannot be renamed while objects reference it, so the row is
--- replaced. On a hosted project with objects already in `demo-assets` this
--- delete will fail loudly rather than orphan files, which is the correct
--- outcome: a copy has to happen first.
+-- What this migration can and cannot do here is worth stating, because the
+-- obvious version does not work. Removing the policies is ordinary DDL. Adding
+-- the new bucket is an ordinary upsert, which is how 0700 declares buckets in
+-- the first place. But *deleting* the old bucket row is refused outright:
+--
+--   ERROR: Direct deletion from storage tables is not allowed.
+--          Use the Storage API instead. (SQLSTATE 42501)
+--
+-- That guard is correct, and it is a useful reminder of where the boundary
+-- actually sits. A bucket row is metadata about objects that live outside
+-- Postgres; deleting the row in SQL would orphan the files, and the database
+-- is not in a position to know whether that is what anyone wanted. Bucket
+-- lifecycle belongs to the Storage API.
+--
+-- So `demo-assets` stays in storage.buckets, and this migration takes away
+-- every policy that referenced it instead. Nothing but service_role can read
+-- or write it afterwards, which is the practical equivalent of retired. Actually
+-- removing it is one call to the Storage API (or one click in the dashboard),
+-- and it is deliberately a human's decision, since on a hosted project there
+-- may be files in there that somebody wants copied first.
 
 drop policy if exists "demo-assets: read as member"   on storage.objects;
 drop policy if exists "demo-assets: write as member"  on storage.objects;
@@ -109,8 +125,6 @@ begin
   end if;
 end;
 $$;
-
-delete from storage.buckets where id = 'demo-assets';
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
