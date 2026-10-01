@@ -17,7 +17,7 @@ begin;
 create extension if not exists pgtap;
 set local search_path to public, extensions;
 
-select plan(14);
+select plan(17);
 
 -- Restores the session after impersonating. `reset role` alone is not enough:
 -- set_config(..., is_local => true) lasts until the transaction ends, so the
@@ -84,13 +84,16 @@ insert into public.organization_members (organization_id, user_id, role) values
   ('bbbbbbbb-0000-4000-b000-000000000001', 'aaaaaaaa-0000-4000-a000-000000000001', 'owner'),
   ('bbbbbbbb-0000-4000-b000-000000000001', 'aaaaaaaa-0000-4000-a000-000000000002', 'member');
 
-insert into public.projects (id, organization_id, name, slug, created_by)
+insert into public.ingredients (id, organization_id, sku, name, unit, created_by)
 values ('cccccccc-0000-4000-c000-000000000001', 'bbbbbbbb-0000-4000-b000-000000000001',
-        'Test Project', 'test-project', 'aaaaaaaa-0000-4000-a000-000000000001');
+        'TEST-ING', 'Test ingredient', 'g', 'aaaaaaaa-0000-4000-a000-000000000001');
 
-insert into public.demos (id, organization_id, project_id, title, slug, created_by)
+-- Left as a draft on purpose: an active product is readable by anyone, which is
+-- the catalogue policy, not a tenancy hole. A draft is the row that must not
+-- escape the organization.
+insert into public.products (id, organization_id, sku, name, price_cents, created_by)
 values ('dddddddd-0000-4000-d000-000000000001', 'bbbbbbbb-0000-4000-b000-000000000001',
-        'cccccccc-0000-4000-c000-000000000001', 'Secret Demo', 'secret-demo',
+        'SECRET', 'Unreleased product', 1200,
         'aaaaaaaa-0000-4000-a000-000000000001');
 
 -- --- The owner --------------------------------------------------------------
@@ -102,8 +105,8 @@ select is(
 
 select is(
   pg_temp.scalar_as('aaaaaaaa-0000-4000-a000-000000000001', 'owner@test.local',
-    'select count(*) from public.demos where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
-  '1', 'owner sees the demo');
+    'select count(*) from public.products where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
+  '1', 'owner sees the draft product');
 
 select is(
   pg_temp.scalar_as('aaaaaaaa-0000-4000-a000-000000000001', 'owner@test.local',
@@ -112,15 +115,22 @@ select is(
 
 select is(
   pg_temp.attempt_as('aaaaaaaa-0000-4000-a000-000000000001', 'owner@test.local',
-    $$update public.demos set title = 'Renamed' where slug = 'secret-demo'$$),
-  null, 'owner can rename a demo');
+    $$update public.products set name = 'Renamed' where sku = 'SECRET'$$),
+  null, 'owner can rename a product');
+
+-- `allergens` is derived from the recipe. A member has no UPDATE privilege on
+-- that column at all, so this is refused outright rather than silently ignored.
+select is(
+  pg_temp.attempt_as('aaaaaaaa-0000-4000-a000-000000000001', 'owner@test.local',
+    $$update public.products set allergens = array['peanuts'] where sku = 'SECRET'$$),
+  '42501', 'not even the owner may write a derived column directly');
 
 -- --- A plain member ---------------------------------------------------------
 
 select is(
   pg_temp.scalar_as('aaaaaaaa-0000-4000-a000-000000000002', 'member@test.local',
-    'select count(*) from public.demos where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
-  '1', 'member sees the demo');
+    'select count(*) from public.products where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
+  '1', 'member sees the draft product');
 
 select is(
   pg_temp.scalar_as('aaaaaaaa-0000-4000-a000-000000000002', 'member@test.local',
@@ -131,13 +141,13 @@ select is(
 -- evidence is that the row survived.
 select is(
   pg_temp.attempt_as('aaaaaaaa-0000-4000-a000-000000000002', 'member@test.local',
-    $$delete from public.demos where slug = 'secret-demo'$$),
+    $$delete from public.products where sku = 'SECRET'$$),
   null, 'a member''s delete is accepted but matches nothing');
 
 select is(
-  (select count(*)::text from public.demos
-    where slug = 'secret-demo' and organization_id = 'bbbbbbbb-0000-4000-b000-000000000001'),
-  '1', 'the demo survived the member''s delete');
+  (select count(*)::text from public.products
+    where sku = 'SECRET' and organization_id = 'bbbbbbbb-0000-4000-b000-000000000001'),
+  '1', 'the product survived the member''s delete');
 
 select is(
   pg_temp.attempt_as('aaaaaaaa-0000-4000-a000-000000000002', 'member@test.local',
@@ -165,15 +175,29 @@ select is(
 
 select is(
   pg_temp.scalar_as('aaaaaaaa-0000-4000-a000-000000000003', 'outsider@test.local',
-    'select count(*) from public.demos where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
-  '0', 'outsider sees no demos');
+    'select count(*) from public.products where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
+  '0', 'outsider sees no draft products');
+
+select is(
+  pg_temp.scalar_as('aaaaaaaa-0000-4000-a000-000000000003', 'outsider@test.local',
+    'select count(*) from public.ingredients where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
+  '0', 'outsider sees no ingredients');
 
 -- --- An anonymous visitor ---------------------------------------------------
 
 select is(
   pg_temp.scalar_as(null, null,
-    'select count(*) from public.demos where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
-  '0', 'anonymous visitors see no unpublished demos');
+    'select count(*) from public.products where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
+  '0', 'anonymous visitors see no draft products');
+
+-- The same row, activated, is readable by anyone. Two policies on one table:
+-- one scoped to the organization, one to the catalogue.
+update public.products set status = 'active' where sku = 'SECRET';
+
+select is(
+  pg_temp.scalar_as(null, null,
+    'select count(*) from public.products where organization_id = ''bbbbbbbb-0000-4000-b000-000000000001'''),
+  '1', 'anonymous visitors see the active catalogue');
 
 select * from finish();
 rollback;

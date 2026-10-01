@@ -1,4 +1,4 @@
--- Plan enforcement, the invitation lifecycle, and what the outside world sees.
+-- Plan enforcement, the allergen vocabulary, and the invitation lifecycle.
 -- Impersonation helpers follow the same pattern as 01_tenancy.
 begin;
 
@@ -11,7 +11,7 @@ begin;
 create extension if not exists pgtap;
 set local search_path to public, extensions;
 
-select plan(14);
+select plan(10);
 
 -- Restores the session after impersonating. `reset role` alone is not enough:
 -- set_config(..., is_local => true) lasts until the transaction ends, so the
@@ -80,41 +80,39 @@ select is(
   'free', 'a new organization starts on the free plan');
 
 -- --- Quotas -----------------------------------------------------------------
+-- The free plan allows ten products. The limit lives in plans.limits as jsonb
+-- and is enforced by a BEFORE INSERT trigger, so it fails as a check violation
+-- (23514) — which the API layer maps to 402, not 500.
 
 select is(
   pg_temp.attempt_as('eeeeeeee-0000-4000-a000-000000000001', 'founder@test.local',
-    format($$insert into public.projects (organization_id, name)
-             values (%L, 'First')$$, (select org_id from fixture))),
-  null, 'the first project is allowed');
+    format($$insert into public.products (organization_id, sku, name, price_cents)
+             select %L, 'SKU-' || n, 'Product ' || n, 100 * n
+               from generate_series(1, 10) n$$, (select org_id from fixture))),
+  null, 'ten products fit on the free plan');
 
 select is(
   pg_temp.attempt_as('eeeeeeee-0000-4000-a000-000000000001', 'founder@test.local',
-    format($$insert into public.projects (organization_id, name)
-             values (%L, 'Second')$$, (select org_id from fixture))),
-  '23514', 'the free plan allows only one project');
+    format($$insert into public.products (organization_id, sku, name, price_cents)
+             values (%L, 'SKU-11', 'One too many', 999)$$,
+           (select org_id from fixture))),
+  '23514', 'the eleventh product is refused');
 
+-- A product with no recipe has no allergens, and the column says so rather
+-- than being null — an empty list is a claim, a null is a gap in the record.
+select is(
+  (select allergens::text from public.products p, fixture f
+    where p.organization_id = f.org_id and p.sku = 'SKU-1'),
+  '{}', 'a product with no recipe declares no allergens');
+
+-- Allergen codes are a closed vocabulary in a table, so a typo is a write-time
+-- error rather than a label nobody notices is wrong.
 select is(
   pg_temp.attempt_as('eeeeeeee-0000-4000-a000-000000000001', 'founder@test.local',
-    format($$insert into public.demos (organization_id, project_id, title)
-             select %L, p.id, 'Demo ' || n
-               from public.projects p, generate_series(1, 3) n
-              where p.organization_id = %L$$,
-           (select org_id from fixture), (select org_id from fixture))),
-  null, 'three demos fit on the free plan');
-
-select is(
-  pg_temp.attempt_as('eeeeeeee-0000-4000-a000-000000000001', 'founder@test.local',
-    format($$insert into public.demos (organization_id, project_id, title)
-             select %L, p.id, 'One too many' from public.projects p
-              where p.organization_id = %L$$,
-           (select org_id from fixture), (select org_id from fixture))),
-  '23514', 'the fourth demo is refused');
-
--- Slugs are derived from titles and de-duplicated automatically.
-select is(
-  (select count(distinct slug)::text from public.demos d, fixture f
-    where d.organization_id = f.org_id),
-  '3', 'derived slugs are unique within an organization');
+    format($$insert into public.ingredients (organization_id, sku, name, unit, allergens)
+             values (%L, 'TYPO', 'Mislabelled', 'g', array['peanut'])$$,
+           (select org_id from fixture))),
+  '23514', 'an allergen code outside the vocabulary is refused');
 
 -- --- Invitations ------------------------------------------------------------
 
@@ -142,29 +140,6 @@ select is(
   pg_temp.attempt_as('eeeeeeee-0000-4000-a000-000000000002', 'invitee@test.local',
     format($$select public.accept_organization_invite(%L)$$, (select token from invite))),
   '23514', 'an invitation cannot be redeemed twice');
-
--- --- Sharing ----------------------------------------------------------------
-
-update public.demos set status = 'published', visibility = 'link'
- where title = 'Demo 1' and organization_id = (select org_id from fixture);
-
-select is(
-  pg_temp.scalar_as(null, null,
-    format('select count(*) from public.demos where organization_id = %L',
-           (select org_id from fixture))),
-  '0', 'a link-shared demo is not listable by anonymous callers');
-
-select is(
-  pg_temp.scalar_as(null, null,
-    format($$select public.get_public_demo(%L) ->> 'title'$$,
-           (select public_id from public.demos d, fixture f
-             where d.organization_id = f.org_id and d.title = 'Demo 1'))),
-  'Demo 1', 'a link-shared demo is readable through the share RPC');
-
--- An unknown share id must not distinguish "does not exist" from "not shared".
-select is(
-  pg_temp.scalar_as(null, null, $$select public.get_public_demo('nosuchshareid')$$),
-  null, 'an unknown share id yields nothing');
 
 select * from finish();
 rollback;

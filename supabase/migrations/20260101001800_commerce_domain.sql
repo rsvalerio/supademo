@@ -184,7 +184,19 @@ select private.attach_updated_at('public.products');
 create trigger guard_server_columns
   before update on public.products
   for each row execute function private.tg_guard_columns(
-    'id', 'organization_id', 'allergens', 'created_by', 'created_at');
+    'id', 'organization_id', 'created_by', 'created_at');
+
+-- `allergens` is derived, and the column guard is the wrong tool for it. The
+-- guard decides by looking at the request's JWT role, so it cannot tell a
+-- client writing the column apart from the recompute function below writing it
+-- from inside a trigger — both arrive with the same `authenticated` claim, and
+-- both would be reverted. Column-level privilege can tell them apart: the
+-- recompute function runs as the table's owner and is unaffected, while a
+-- member cannot name the column in an UPDATE at all. The error is also better
+-- than a silent revert — the write is refused, not quietly ignored.
+revoke update on public.products from authenticated;
+grant update (sku, name, description, price_cents, currency, status, archived_at)
+  on public.products to authenticated;
 
 create or replace function private.tg_enforce_product_quota()
 returns trigger
@@ -543,7 +555,8 @@ declare
   v_qty         integer;
   requirement   record;
   v_available   numeric;
-  v_total       integer;
+  v_total       integer := 0;
+  v_resolved    jsonb := '[]'::jsonb;
 begin
   if not (app.is_service_role() or app.has_org_role(p_organization_id, 'member')) then
     raise exception 'not authorized for this organization'
@@ -566,12 +579,14 @@ begin
       using errcode = 'no_data_found';
   end if;
 
-  -- Header first, so the lines have something to hang off. Currency is filled
-  -- in from the first product and then held against every other one.
-  insert into public.orders (organization_id, customer_id, currency)
-  values (p_organization_id, p_customer_id, 'xxx')
-  returning id into v_order_id;
-
+  -- Resolve the whole order against the catalogue before writing anything.
+  -- The obvious shape is to insert a blank header, add the lines, then update
+  -- the header with the currency and the total — and it does not work here:
+  -- `currency`, `total_cents` and `placed_at` are server-owned columns, and the
+  -- column guard silently reverts a client's edit to them. A SECURITY DEFINER
+  -- function does not change the caller's role, so for an ordinary member that
+  -- update would be reverted and every order would be stored as 0 xxx. Writing
+  -- the header once, already correct, is both safer and simpler.
   for line in select * from jsonb_array_elements(p_lines)
   loop
     v_qty := coalesce((line ->> 'quantity')::integer, 0);
@@ -593,6 +608,7 @@ begin
         using errcode = 'no_data_found';
     end if;
 
+    -- Currency comes from the first product and is then held against the rest.
     v_currency := coalesce(v_currency, product.currency);
 
     if product.currency <> v_currency then
@@ -601,17 +617,43 @@ begin
               hint = 'Split this into one order per currency.';
     end if;
 
-    insert into public.order_items (
-      order_id, organization_id, product_id,
-      sku_at_purchase, name_at_purchase, unit_price_cents, quantity,
-      allergens_disclosed
-    )
-    values (
-      v_order_id, p_organization_id, product.id,
-      product.sku, product.name, product.price_cents, v_qty,
-      product.allergens
+    v_total := v_total + product.price_cents * v_qty;
+
+    -- Price and allergens are read once, here, and carried to the line. Even
+    -- if the product is repriced a millisecond later, this order was agreed at
+    -- the value in this array.
+    v_resolved := v_resolved || jsonb_build_object(
+      'product_id', product.id,
+      'sku', product.sku,
+      'name', product.name,
+      'unit_price_cents', product.price_cents,
+      'quantity', v_qty,
+      'allergens', to_jsonb(product.allergens)
     );
   end loop;
+
+  insert into public.orders (
+    organization_id, customer_id, currency, total_cents, status, confirmed_at
+  )
+  values (
+    p_organization_id, p_customer_id, v_currency, v_total, 'confirmed', now()
+  )
+  returning id into v_order_id;
+
+  insert into public.order_items (
+    order_id, organization_id, product_id,
+    sku_at_purchase, name_at_purchase, unit_price_cents, quantity,
+    allergens_disclosed
+  )
+  select v_order_id,
+         p_organization_id,
+         (l ->> 'product_id')::uuid,
+         (l ->> 'sku')::extensions.citext,
+         l ->> 'name',
+         (l ->> 'unit_price_cents')::integer,
+         (l ->> 'quantity')::integer,
+         coalesce(array(select jsonb_array_elements_text(l -> 'allergens')), '{}'::text[])
+    from jsonb_array_elements(v_resolved) as l;
 
   -- Lock every ingredient this order touches, in ascending id order, before
   -- reading any balance. Two orders racing for the last of something therefore
@@ -647,17 +689,6 @@ begin
       (p_organization_id, requirement.ingredient_id, 'consumption',
        -requirement.required, v_order_id);
   end loop;
-
-  select coalesce(sum(oi.line_total_cents), 0) into v_total
-    from public.order_items oi
-   where oi.order_id = v_order_id;
-
-  update public.orders
-     set currency = v_currency,
-         total_cents = v_total,
-         status = 'confirmed',
-         confirmed_at = now()
-   where id = v_order_id;
 
   insert into public.usage_events
     (organization_id, metric, quantity, subject_type, subject_id)
@@ -743,6 +774,7 @@ security definer
 set search_path = ''
 as $$
   select jsonb_build_object(
+    'id', o.id,
     'order_number', o.order_number,
     'status', o.status,
     'currency', o.currency,

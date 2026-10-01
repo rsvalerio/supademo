@@ -1,14 +1,14 @@
 /**
  * The machine-facing API. Authenticated by API key, never by user session.
  *
- *   GET   /api-v1/whoami                      (any valid key)
- *   GET   /api-v1/demos                       demos:read
- *   POST  /api-v1/demos                       demos:write
- *   GET   /api-v1/demos/:public_id            demos:read
- *   PATCH /api-v1/demos/:public_id            demos:write
- *   POST  /api-v1/demos/:public_id/publish    demos:write
- *   GET   /api-v1/demos/:public_id/analytics  analytics:read
+ *   GET   /api-v1/whoami                      products:read
  *   PUT   /api-v1/documents/:source_id        documents:write
+ *
+ * The commerce routes — products, inventory, orders — are not here yet. The
+ * domain and its RPCs landed first, deliberately: the transport layer is the
+ * thin part, and routing to a function that does not exist yet would be worse
+ * than not routing at all. The demo routes that used to be here were removed
+ * with the domain they served.
  *
  * Writes accept an `Idempotency-Key` header; a retry replays the first
  * response rather than doing the work twice.
@@ -55,6 +55,10 @@ function statusForPgError(code: string | undefined, message: string): number {
     case "23514":
       return /plan limit reached/.test(message) ? 402 : 422;
     case "23505":
+      return 409;
+    case "53000":
+      // insufficient_resources: raised when an order asks for more stock than
+      // the ledger holds. A conflict with the world's state, not a bad request.
       return 409;
     case "42501":
       return 403;
@@ -121,101 +125,13 @@ serveJson(async (req) => {
   // GET /whoami — what this key is, useful for verifying a deploy's config.
   if (segments[0] === "whoami") {
     if (req.method !== "GET") throw new HttpError(405, "Method not allowed");
-    const identity = await authenticate("demos:read");
+    const identity = await authenticate("products:read");
     return apiJson(req, identity, {
       organization_id: identity.organizationId,
       key_id: identity.keyId,
       scopes: identity.scopes,
       rate_limit: identity.rateLimit,
     });
-  }
-
-  if (segments[0] === "demos") {
-    // GET /demos
-    if (segments.length === 1 && req.method === "GET") {
-      const identity = await authenticate("demos:read");
-      const limit = Number(url.searchParams.get("limit") ?? 25);
-      const before = url.searchParams.get("before");
-
-      const demos = await callRpc("api_list_demos", {
-        p_organization_id: identity.organizationId,
-        p_limit: Number.isFinite(limit) ? limit : 25,
-        p_before: before,
-      });
-      return apiJson(req, identity, { demos });
-    }
-
-    // POST /demos
-    if (segments.length === 1 && req.method === "POST") {
-      const identity = await authenticate("demos:write");
-      const body = parseBody(rawBody);
-      if (!body.project || !body.title) {
-        throw new HttpError(400, "`project` (slug) and `title` are required");
-      }
-
-      return await writeOnce(req, identity, rawBody, 201, () =>
-        callRpc("api_create_demo", {
-          p_organization_id: identity.organizationId,
-          p_project: String(body.project),
-          p_title: String(body.title),
-          p_description: body.description ?? null,
-          p_tags: body.tags ?? [],
-        }));
-    }
-
-    const publicId = segments[1];
-
-    // PATCH /demos/:public_id
-    if (segments.length === 2 && req.method === "PATCH") {
-      const identity = await authenticate("demos:write");
-      const body = parseBody(rawBody);
-
-      return await writeOnce(req, identity, rawBody, 200, () =>
-        callRpc("api_update_demo", {
-          p_organization_id: identity.organizationId,
-          p_public_id: publicId,
-          p_title: body.title ?? null,
-          p_description: body.description ?? null,
-          p_tags: body.tags ?? null,
-        }));
-    }
-
-    // GET /demos/:public_id
-    if (segments.length === 2 && req.method === "GET") {
-      const identity = await authenticate("demos:read");
-      const demo = await callRpc<unknown>("api_get_demo", {
-        p_organization_id: identity.organizationId,
-        p_public_id: publicId,
-      });
-      if (!demo) throw new HttpError(404, "Demo not found");
-      return apiJson(req, identity, demo);
-    }
-
-    // POST /demos/:public_id/publish
-    if (segments.length === 3 && segments[2] === "publish" && req.method === "POST") {
-      const identity = await authenticate("demos:write");
-      const body = parseBody(rawBody);
-
-      return await writeOnce(req, identity, rawBody, 200, () =>
-        callRpc("api_publish_demo", {
-          p_organization_id: identity.organizationId,
-          p_public_id: publicId,
-          p_visibility: body.visibility ?? "link",
-        }));
-    }
-
-    // GET /demos/:public_id/analytics
-    if (segments.length === 3 && segments[2] === "analytics" && req.method === "GET") {
-      const identity = await authenticate("analytics:read");
-      const since = url.searchParams.get("since");
-      const analytics = await callRpc<unknown>("api_demo_analytics", {
-        p_organization_id: identity.organizationId,
-        p_public_id: publicId,
-        p_since: since,
-      });
-      if (!analytics) throw new HttpError(404, "Demo not found");
-      return apiJson(req, identity, analytics);
-    }
   }
 
   // PUT /documents/:source_id — upsert, so a customer's sync job can re-run.
@@ -237,12 +153,6 @@ serveJson(async (req) => {
     error: "Not found",
     routes: [
       "GET   /api-v1/whoami",
-      "GET   /api-v1/demos",
-      "POST  /api-v1/demos",
-      "GET   /api-v1/demos/:public_id",
-      "PATCH /api-v1/demos/:public_id",
-      "POST  /api-v1/demos/:public_id/publish",
-      "GET   /api-v1/demos/:public_id/analytics",
       "PUT   /api-v1/documents/:source_id",
     ],
   }, 404);

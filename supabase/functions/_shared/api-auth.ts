@@ -23,11 +23,15 @@ import { adminClient } from "./supabase.ts";
 
 /** Mirrors public.api_scopes. Kept narrow so a typo is a compile error. */
 export type ApiScope =
-  | "demos:read"
-  | "demos:write"
+  | "products:read"
+  | "products:write"
+  | "inventory:read"
+  | "inventory:write"
+  | "orders:read"
+  | "orders:write"
+  | "customers:read"
+  | "customers:write"
   | "analytics:read"
-  | "leads:read"
-  | "projects:read"
   | "documents:read"
   | "documents:write";
 

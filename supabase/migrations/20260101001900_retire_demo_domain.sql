@@ -455,6 +455,59 @@ comment on function public.create_api_key(uuid, text, text[], interval) is
 -- unused, for the reason given at the top of this file.
 alter type public.document_source add value if not exists 'product';
 
+-- --- Outbound events --------------------------------------------------------
+-- The webhook machinery in 1100 is domain-agnostic: an endpoint subscribes to
+-- event names, and a trigger calls private.dispatch_event(). Only the trigger
+-- was demo-specific, so replacing it is the whole change. An order reaching a
+-- terminal state is the event a shop's integrations actually want.
+
+create or replace function private.tg_dispatch_order_events()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  event_name text;
+begin
+  -- Announce transitions, not every subsequent save. OLD is unassigned on
+  -- INSERT, so it is only read in the UPDATE branch.
+  if tg_op = 'UPDATE' and old.status = new.status then
+    return null;
+  end if;
+
+  event_name := case new.status
+    when 'confirmed' then 'order.confirmed'
+    when 'fulfilled' then 'order.fulfilled'
+    when 'cancelled' then 'order.cancelled'
+    else null
+  end;
+
+  if event_name is null then
+    return null;
+  end if;
+
+  perform private.dispatch_event(
+    new.organization_id,
+    event_name,
+    jsonb_build_object(
+      'id', new.id,
+      'order_number', new.order_number,
+      'status', new.status,
+      'currency', new.currency,
+      'total_cents', new.total_cents,
+      'placed_at', new.placed_at
+    )
+  );
+
+  return null;
+end;
+$$;
+
+create trigger dispatch_order_events
+  after insert or update of status on public.orders
+  for each row execute function private.tg_dispatch_order_events();
+
 -- --- Realtime ---------------------------------------------------------------
 -- Orders are the one commerce table worth streaming: a kitchen or packing
 -- screen wants a new line the moment it is confirmed. order_items deliberately

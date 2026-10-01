@@ -15,7 +15,7 @@ begin;
 create extension if not exists pgtap;
 set local search_path to public, extensions;
 
-select plan(16);
+select plan(18);
 
 -- Restores the session after impersonating. `reset role` alone is not enough:
 -- set_config(..., is_local => true) lasts until the transaction ends, so the
@@ -74,14 +74,32 @@ insert into public.organization_members (organization_id, user_id, role) values
   ('11111111-2222-4000-b000-000000000001', '11111111-2222-4000-a000-000000000001', 'owner'),
   ('11111111-2222-4000-b000-000000000001', '11111111-2222-4000-a000-000000000002', 'member');
 
-insert into public.projects (id, organization_id, name, slug, created_by)
+-- Enough of a shop to have one order to read back.
+insert into public.ingredients (id, organization_id, sku, name, unit)
 values ('11111111-2222-4000-c000-000000000001', '11111111-2222-4000-b000-000000000001',
-        'API Project', 'api-project', '11111111-2222-4000-a000-000000000001');
+        'API-ING', 'API ingredient', 'g');
 
-insert into public.demos (id, organization_id, project_id, public_id, title, slug, created_by)
+insert into public.products (id, organization_id, sku, name, price_cents, status)
 values ('11111111-2222-4000-d000-000000000001', '11111111-2222-4000-b000-000000000001',
-        '11111111-2222-4000-c000-000000000001', 'apitestdemo1', 'API Demo', 'api-demo',
-        '11111111-2222-4000-a000-000000000001');
+        'API-PROD', 'API product', 250, 'active');
+
+insert into public.product_ingredients (product_id, ingredient_id, organization_id, quantity)
+values ('11111111-2222-4000-d000-000000000001', '11111111-2222-4000-c000-000000000001',
+        '11111111-2222-4000-b000-000000000001', 10);
+
+insert into public.inventory_movements (organization_id, ingredient_id, kind, quantity)
+values ('11111111-2222-4000-b000-000000000001', '11111111-2222-4000-c000-000000000001',
+        'receipt', 100);
+
+insert into public.customers (id, organization_id, email)
+values ('11111111-2222-4000-e000-000000000001', '11111111-2222-4000-b000-000000000001',
+        'apibuyer@test.local');
+
+create temporary table api_order on commit drop as
+  select public.place_order(
+    '11111111-2222-4000-b000-000000000001',
+    '11111111-2222-4000-e000-000000000001',
+    '[{"sku": "API-PROD", "quantity": 2}]'::jsonb) as payload;
 
 -- --- Issuing ----------------------------------------------------------------
 
@@ -96,7 +114,7 @@ create temporary table issued on commit drop as
   select pg_temp.scalar_as('11111111-2222-4000-a000-000000000001', 'apiowner@test.local',
     $$select (public.create_api_key(
         '11111111-2222-4000-b000-000000000001', 'CI key',
-        array['demos:read', 'analytics:read'])).api_key$$) as api_key,
+        array['products:read', 'analytics:read'])).api_key$$) as api_key,
     null::uuid as key_id;
 
 -- Resolved in a second statement on purpose: a join in the statement above
@@ -126,26 +144,26 @@ select is(
 select is(
   pg_temp.attempt_as('11111111-2222-4000-a000-000000000001', 'apiowner@test.local',
     $$select public.create_api_key('11111111-2222-4000-b000-000000000001', 'Typo',
-        array['demos:reed'])$$),
+        array['products:reed'])$$),
   '23514', 'a key cannot be issued with an unknown scope');
 
 -- --- Authenticating ---------------------------------------------------------
 
 select is(
-  (select public.authenticate_api_key((select api_key from issued), 'demos:read') ->> 'ok'),
+  (select public.authenticate_api_key((select api_key from issued), 'products:read') ->> 'ok'),
   'true', 'a valid key with the right scope authenticates');
 
 select is(
-  (select public.authenticate_api_key((select api_key from issued), 'demos:read')
+  (select public.authenticate_api_key((select api_key from issued), 'products:read')
             ->> 'organization_id'),
   '11111111-2222-4000-b000-000000000001', 'it resolves to its own organization');
 
 select is(
-  (select public.authenticate_api_key((select api_key from issued), 'demos:write') ->> 'error'),
+  (select public.authenticate_api_key((select api_key from issued), 'orders:write') ->> 'error'),
   'missing_scope', 'a scope the key does not hold is refused');
 
 select is(
-  (select public.authenticate_api_key('sk_notarealkey_deadbeef', 'demos:read') ->> 'error'),
+  (select public.authenticate_api_key('sk_notarealkey_deadbeef', 'products:read') ->> 'error'),
   'unknown_key', 'an unknown key is refused');
 
 -- Every attempt, good or bad, leaves a trace.
@@ -165,35 +183,61 @@ select ok(
 -- call is refused rather than merely slowed.
 
 select lives_ok(
-  $$select public.authenticate_api_key((select api_key from issued), 'demos:read')
+  $$select public.authenticate_api_key((select api_key from issued), 'products:read')
       from generate_series(1, 58)$$,
   'the first 60 calls in a minute are allowed');
 
 select is(
-  (select public.authenticate_api_key((select api_key from issued), 'demos:read') ->> 'error'),
+  (select public.authenticate_api_key((select api_key from issued), 'products:read') ->> 'error'),
   'rate_limited', 'the call past the per-minute budget is refused');
 
 select ok(
-  (select (public.authenticate_api_key((select api_key from issued), 'demos:read')
+  (select (public.authenticate_api_key((select api_key from issued), 'products:read')
             ->> 'retry_after_seconds')::int between 1 and 60),
   'the refusal carries a usable Retry-After');
 
 -- --- Tenant isolation of the read surface -----------------------------------
--- The API functions take the organization id and filter by it, so a key from
--- one tenant cannot reach another's rows even though the caller is service_role.
+-- Every function on the machine surface takes the organization id as its first
+-- argument and filters by it. That is the whole tenant boundary here: the
+-- caller is service_role, so RLS is not switched on to catch a mistake.
 
 select is(
-  (select jsonb_array_length(
-    public.api_list_demos('11111111-2222-4000-b000-000000000001')))::text,
-  '1', 'the read surface returns this organization''s demos');
+  (select payload ->> 'order_number' from api_order),
+  (select order_number from public.orders
+    where organization_id = '11111111-2222-4000-b000-000000000001'),
+  'the read surface returns this organization''s order');
 
 -- Against a real second tenant, not an empty one: the interesting property is
--- that the other organization's own demos come back and ours do not leak into
--- them, which an id that matches nothing could not demonstrate.
+-- that a known-good order id stops resolving the moment it is paired with the
+-- wrong organization, which an id that matches nothing could not demonstrate.
 select ok(
-  public.api_list_demos('00000000-0000-4000-b000-000000000002')::text
-    not like '%apitestdemo1%',
-  'the same function never returns this organization''s demos to another');
+  public.get_order(
+    '11111111-2222-4000-b000-000000000001',
+    (select id from public.orders
+      where organization_id = '00000000-0000-4000-b000-000000000002'
+      order by placed_at limit 1)) is null,
+  'an order id from another organization does not resolve against this one');
+
+-- --- Idempotent replay ------------------------------------------------------
+-- A retried POST must not place a second order. The record is keyed by
+-- (key_id, idempotency_key), so it is scoped to the credential that made the
+-- call rather than being global.
+
+select public.api_remember_idempotent(
+  (select key_id from issued), 'retry-key-0001', 'fingerprint-a',
+  '{"order_number":"stored"}'::jsonb, 201);
+
+select is(
+  public.api_replay_idempotent((select key_id from issued), 'retry-key-0001', 'fingerprint-a')
+    -> 'response' ->> 'order_number',
+  'stored', 'the same request replays the stored response');
+
+-- Same key, different body: that is a client bug, and answering with the old
+-- response would hide it. 23505 maps to 409.
+select throws_ok(
+  format($$select public.api_replay_idempotent(%L, 'retry-key-0001', 'fingerprint-b')$$,
+         (select key_id from issued)),
+  '23505', null, 'the same key with a different body is a conflict, not a replay');
 
 select * from finish();
 rollback;

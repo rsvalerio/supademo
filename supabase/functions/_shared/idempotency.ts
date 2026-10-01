@@ -1,7 +1,7 @@
 /**
  * Idempotent replay for write endpoints.
  *
- * A machine client that times out will retry, and "create a demo" is not safe
+ * A machine client that times out will retry, and "place an order" is not safe
  * to run twice. When the caller sends `Idempotency-Key`, the first response is
  * stored against (api key, idempotency key) and replayed on any repeat.
  *
