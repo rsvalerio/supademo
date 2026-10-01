@@ -80,12 +80,14 @@ Two details that are easy to get wrong:
 | `organization_invites` | — | — | manage | manage | — |
 | `subscriptions` | read | read | read | read | — |
 | `usage_events` | — | — | read | read | — |
-| `projects` | read | write | + delete | + delete | — |
-| `demos` | read | write | + delete | + delete | `public` only, 15 columns |
-| `demo_steps` | read | write | write | write | — |
-| `demo_comments` | read, comment | + edit own | + moderate | + moderate | — |
-| `demo_views` | read | read | read | read | write via RPC |
-| `demo_leads` | — | read | + delete | + delete | write via RPC |
+| `allergens` | read | read | read | read | read |
+| `ingredients` | read | write | + delete | + delete | — |
+| `products` | read | write | + delete | + delete | `active` only, 10 columns |
+| `product_ingredients` | read | manage | manage | manage | — |
+| `inventory_movements` | read | read, append | read, append | read, append | — |
+| `customers` | read | write | + delete | + delete | — |
+| `orders` | read | read, update | read, update | read, update | write via RPC |
+| `order_items` | read | read | read | read | write via RPC |
 | `documents` | read | write | write | write | — |
 | `api_keys` | — | — | manage | manage | — |
 | `webhook_endpoints` | — | — | manage | manage | — |
@@ -93,23 +95,31 @@ Two details that are easy to get wrong:
 | `plans` | read | read | read | read | read |
 | `private.*` | — | — | — | — | — |
 
-"write" means insert and update; "manage" means all four verbs.
+"write" means insert and update; "manage" means all four verbs; "append" means
+insert with no update or delete policy at all, which is what makes
+`inventory_movements` a ledger rather than a table of current values. `orders`
+has no insert policy in any column of this table: an order exists only if
+`public.place_order()` made it.
+
+Two columns are narrower than their table. `products.allergens` is derived, so
+no role has `UPDATE` on it — the row policy would let a member write it and the
+privilege refuses. See the note on derived columns in
+[`data-model.md`](data-model.md#conventions).
 
 ## Two limits, not one, for anonymous access
 
-`api.demo_directory` is `security_invoker`, so `anon` needs genuine access to
-the rows underneath it. Rather than widening RLS and trusting the view never to
-select a column it should not, the row policy is narrow **and** the column
-grants are explicit:
+An anonymous visitor can read the catalogue, and the organization behind it.
+Rather than widening RLS and trusting every future view never to select a column
+it should not, the row policy is narrow **and** the column grants are explicit —
+two independent limits, either of which alone would be enough:
 
 ```sql
 create policy "organizations: read when publicly listed"
   on public.organizations for select to anon
   using (deleted_at is null and exists (
-    select 1 from public.demos d
-     where d.organization_id = organizations.id
-       and d.visibility = 'public' and d.status = 'published'
-       and d.deleted_at is null));
+    select 1 from public.products p
+     where p.organization_id = organizations.id
+       and p.status = 'active' and p.archived_at is null));
 
 revoke select on public.organizations from anon;
 grant select (id, slug, name, logo_path, deleted_at) on public.organizations to anon;
@@ -139,8 +149,8 @@ returning, not wrapped around the assertions:
 ```sql
 select is(
   pg_temp.scalar_as(OUTSIDER, 'outsider@test.local',
-    'select count(*) from public.demos where organization_id = ''...'''),
-  '0', 'outsider sees no demos');
+    'select count(*) from public.products where organization_id = ''...'''),
+  '0', 'outsider sees no draft products');
 ```
 
 Asserting from within an impersonated session is how RLS suites end up failing

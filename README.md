@@ -1,7 +1,7 @@
 # Supademo
 
 A backend-first reference application built on Supabase. It models a small but
-realistic multi-tenant SaaS (organizations → projects → interactive demos) and
+realistic multi-tenant commerce backend (organizations → products → orders) and
 deliberately exercises as much of the Supabase platform as possible, so it can
 double as a playground for trying out new Supabase features.
 
@@ -20,7 +20,7 @@ dropped in later without moving anything.
 | Database | Row Level Security on every table | `supabase/migrations/`, `docs/rls.md` |
 | Database | `SECURITY DEFINER` helpers, RPC surface | `..._organizations.sql`, `..._rpc.sql` |
 | Database | Triggers, audit log, soft deletes | `..._audit.sql` |
-| Database | Full-text search (`tsvector`) + trigram | `..._projects_demos.sql` |
+| Database | Full-text search (`tsvector`) + trigram | `..._commerce_domain.sql` |
 | Database | `pgvector` semantic + hybrid search (RRF) | `..._ai_search.sql` |
 | Database | Partition-friendly analytics + rollups | `..._analytics.sql` |
 | Auth | Email/password, OAuth, magic link, anonymous | `supabase/config.toml` |

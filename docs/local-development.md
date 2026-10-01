@@ -253,9 +253,6 @@ Calling one:
 # Public — no auth
 curl http://127.0.0.1:54321/functions/v1/health
 
-# The share endpoint (demoacme002 is seeded, shared by link)
-curl 'http://127.0.0.1:54321/functions/v1/public-demo?id=demoacme002'
-
 # Authenticated — the anon key comes from `make status`
 curl -X POST http://127.0.0.1:54321/functions/v1/embed-document \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \

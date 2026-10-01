@@ -61,7 +61,7 @@ Issued by `public.create_api_key()`, which returns the plaintext **once**:
 
 ```sql
 select * from public.create_api_key(
-  '<organization_id>', 'CI key', array['demos:read', 'analytics:read']);
+  '<organization_id>', 'CI key', array['products:read', 'orders:write']);
 ```
 
 ```
@@ -78,16 +78,19 @@ The prefix is kept in the clear so a dashboard can show `sk_a1b2c3d4…` beside
 ### Scopes
 
 `public.api_scopes` is the complete vocabulary, and a trigger rejects a key
-carrying anything that is not in it. A typo like `demos:reed` fails at issue
+carrying anything that is not in it. A typo like `products:reed` fails at issue
 time with `23514`, instead of producing a key that mysteriously 403s later.
 
 | Scope | Grants |
 | --- | --- |
-| `demos:read` | List and read demos, including steps |
-| `demos:write` | Create, update, publish |
-| `analytics:read` | Views, completions, durations |
-| `leads:read` | Email captures |
-| `projects:read` | List projects |
+| `products:read` | List and read products, their recipe and allergens |
+| `products:write` | Create and update products, ingredients and recipes |
+| `inventory:read` | Stock on hand and the movement ledger |
+| `inventory:write` | Record receipts, waste and adjustments |
+| `orders:read` | Orders and their snapshotted lines |
+| `orders:write` | Place and cancel orders |
+| `customers:read` / `customers:write` | Customer records |
+| `analytics:read` | Order volumes and daily usage |
 | `documents:read` / `documents:write` | Knowledge base |
 
 There is deliberately **no wildcard scope**. A `*` key is the one nobody
@@ -121,15 +124,17 @@ the fifth endpoint.
 Instead every read goes through a function that **takes** the organization id:
 
 ```sql
-public.api_list_demos(p_organization_id uuid, …)
-public.api_get_demo(p_organization_id uuid, p_public_id text)
-public.api_demo_analytics(p_organization_id uuid, p_public_id text, …)
+public.place_order(p_organization_id uuid, p_customer_id uuid, p_lines jsonb)
+public.get_order(p_organization_id uuid, p_order_id uuid)
+public.orders_missing_allergen(p_organization_id uuid, p_allergen text, …)
 ```
 
 They are `service_role`-only and filter by that argument themselves. The edge
 function has exactly one organization id — the one the key resolved to — so
-forgetting the filter is not expressible. The suite asserts one tenant's demos
-never appear in another's listing.
+forgetting the filter is not expressible. The suite asserts it the way that
+actually proves something: a real, known-good order id from a second tenant
+stops resolving the moment it is paired with the wrong organization. An id that
+matches nothing could not demonstrate that.
 
 ### Every attempt is recorded
 
@@ -148,10 +153,14 @@ traffic lands on the same bill as everything else.
 curl https://<project>.supabase.co/functions/v1/api-v1/whoami \
   -H "Authorization: Bearer sk_a1b2c3d4_…"
 
-curl .../api-v1/demos
-curl .../api-v1/demos/demoacme001
-curl .../api-v1/demos/demoacme001/analytics
+curl -X PUT .../api-v1/documents/<source_id> \
+  -H "Authorization: Bearer sk_a1b2c3d4_…" \
+  -d '{"title": "Allergen policy", "content": "…"}'
 ```
+
+The commerce routes are not wired up yet — the domain and its RPCs landed
+first, and a route to a function that does not exist is worse than no route.
+`/whoami` and the documents upsert are what this surface serves today.
 
 Both header forms work. `Authorization: Bearer` is what most HTTP clients reach
 for; `x-supademo-api-key` exists because Supabase's own gateway also reads
@@ -190,6 +199,6 @@ is the immediate version, for when a key has leaked.
   point where customers need scoped, revocable, per-integration access with
   short-lived tokens. API keys are the right answer before that, and pretending
   otherwise buys a token endpoint nobody asked for.
-- **Per-endpoint scopes finer than the table.** `demos:read` covers all demos in
-  the organization. Row-level grants for machines would need a policy language
-  we do not have a use case for.
+- **Per-endpoint scopes finer than the table.** `products:read` covers every
+  product in the organization. Row-level grants for machines would need a policy
+  language we do not have a use case for.
