@@ -238,6 +238,93 @@ begin
 end;
 $$;
 
+-- --- The anonymous read path ------------------------------------------------
+-- This one is not optional housekeeping: the anon policy on public.organizations
+-- reads public.demos, and Postgres records that as a dependency. Dropping the
+-- table with the policy still in place fails outright. The policy is rebuilt
+-- over the catalogue, which is the same idea — an organization is visible to
+-- the world exactly when it has published something to the world.
+--
+-- The pairing from 1400 is kept: a narrow row policy AND explicit column
+-- grants, two independent limits either of which alone would be enough.
+
+drop policy if exists "organizations: read when publicly listed" on public.organizations;
+
+create policy "organizations: read when publicly listed"
+  on public.organizations for select
+  to anon
+  using (
+    deleted_at is null
+    and exists (
+      select 1
+        from public.products p
+       where p.organization_id = organizations.id
+         and p.status = 'active'
+         and p.archived_at is null
+    )
+  );
+
+-- An anonymous visitor reads the shop window, not the back office: no
+-- created_by, no timestamps, no internal status beyond what the policy already
+-- restricts them to.
+revoke select on public.products from anon;
+grant select (
+  id, organization_id, sku, name, description, price_cents, currency,
+  status, allergens, archived_at
+) on public.products to anon;
+
+-- --- The dashboard summary --------------------------------------------------
+-- Same one-round-trip contract, counting the new domain. The quota keys it
+-- reports line up with plans.limits below, so a dashboard can render "7 of 10
+-- products" without a second call.
+
+create or replace function public.organization_overview(p_organization_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select jsonb_build_object(
+           'organization', to_jsonb(o) - 'settings',
+           'role', app.org_role(o.id),
+           'entitlements', app.entitlements(o.id),
+           'counts', jsonb_build_object(
+             'products', (select count(*) from public.products p
+                           where p.organization_id = o.id and p.archived_at is null),
+             'ingredients', (select count(*) from public.ingredients i
+                              where i.organization_id = o.id and i.archived_at is null),
+             'customers', (select count(*) from public.customers c
+                            where c.organization_id = o.id and c.anonymized_at is null),
+             'orders_this_month', (select count(*) from public.orders ord
+                                    where ord.organization_id = o.id
+                                      and ord.status <> 'cancelled'
+                                      and ord.placed_at >= date_trunc('month', now())),
+             'members', (select count(*) from public.organization_members m
+                          where m.organization_id = o.id),
+             'pending_invites', (select count(*) from public.organization_invites i
+                                  where i.organization_id = o.id
+                                    and i.accepted_at is null and i.revoked_at is null)
+           ),
+           'usage_this_month', coalesce((
+             select jsonb_object_agg(u.metric, u.total)
+               from (
+                 select ud.metric, sum(ud.quantity) as total
+                   from public.usage_daily ud
+                  where ud.organization_id = o.id
+                    and ud.day >= date_trunc('month', now())::date
+                  group by ud.metric
+               ) u
+           ), '{}'::jsonb)
+         )
+    from public.organizations o
+   where o.id = p_organization_id
+     and o.deleted_at is null;
+$$;
+
+comment on function public.organization_overview(uuid) is
+  'RPC: everything a dashboard needs for one workspace, in a single round trip.';
+
 -- --- The tables -------------------------------------------------------------
 -- Children first. Every one of these would have gone with a cascade from
 -- public.demos; listing them is what makes the removal reviewable.
