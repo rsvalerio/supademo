@@ -12,6 +12,14 @@
 -- fixture would contradict the invariant it is meant to illustrate.
 -- ---------------------------------------------------------------------------
 
+-- The column guard on public.orders decides by reading the request's JWT role,
+-- and `postgres` with no claims is not service_role as far as auth.role() is
+-- concerned. Without this, the backdating below would be silently reverted and
+-- every order would land at "now" — no error, just a worse fixture, which is
+-- the failure mode worth guarding against. Claiming service_role here is
+-- honest: this file *is* the server.
+set request.jwt.claims to '{"role":"service_role"}';
+
 -- --- Customers --------------------------------------------------------------
 -- A customer is not an auth.users row. They never sign in; they are data the
 -- organization holds about someone, which is also why they can be anonymized
@@ -120,3 +128,5 @@ select public.place_order(
   '00000000-0000-4000-b000-000000000002',
   '00000000-0000-4000-c000-000000000004',
   '[{"sku": "RYE-SOUR", "quantity": 1}]'::jsonb);
+
+reset request.jwt.claims;
