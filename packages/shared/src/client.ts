@@ -53,7 +53,7 @@ export function createApiClient(options: SupademoClientOptions): SupabaseClient<
 export const buckets = {
   avatars: "avatars",
   orgBranding: "org-branding",
-  demoAssets: "demo-assets",
+  productMedia: "product-media",
   exports: "exports",
 } as const;
 
@@ -65,8 +65,12 @@ export function orgBrandingPath(organizationId: string, filename: string): strin
   return `orgs/${organizationId}/${filename}`;
 }
 
-export function demoAssetPath(organizationId: string, demoId: string, filename: string): string {
-  return `orgs/${organizationId}/demos/${demoId}/${filename}`;
+export function productMediaPath(
+  organizationId: string,
+  productId: string,
+  filename: string,
+): string {
+  return `orgs/${organizationId}/products/${productId}/${filename}`;
 }
 
 export interface TransformOptions {

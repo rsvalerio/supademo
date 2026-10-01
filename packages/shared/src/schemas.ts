@@ -32,51 +32,112 @@ export const inviteSchema = z.object({
   role: z.enum(["viewer", "member", "admin"]),
 });
 
-export const projectSchema = z.object({
-  /** projects_name_length (0500) */
-  name: z.string().trim().min(1, "Name is required").max(120),
-  description: z.string().max(2000).optional().nullable(),
-  /** projects_color_format (0500) */
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a hex colour like #3ecf8e").optional(),
+/**
+ * The fourteen declarable allergens of EU FIC 1169/2011 Annex II, which is what
+ * `public.allergens` is seeded with. Kept as a closed list here too so a typo
+ * is caught in the form rather than by the ingredient trigger — the database
+ * remains the one that is true, this one just answers faster.
+ */
+export const ALLERGENS = [
+  "celery",
+  "cereals_containing_gluten",
+  "crustaceans",
+  "eggs",
+  "fish",
+  "lupin",
+  "milk",
+  "molluscs",
+  "mustard",
+  "nuts",
+  "peanuts",
+  "sesame",
+  "soybeans",
+  "sulphur_dioxide",
+] as const;
+
+export const allergenSchema = z.enum(ALLERGENS);
+
+export const ingredientSchema = z.object({
+  // The database constrains the sku only by `unique (organization_id, sku)`.
+  // The length cap is this layer's own, so a form can refuse something absurd
+  // before a round trip; it is not mirroring a CHECK.
+  sku: z.string().trim().min(1, "A sku is required").max(60),
+  /** ingredients_name_length (1800) */
+  name: z.string().trim().min(1, "Name is required").max(160),
+  /** public.unit_of_measure (1800): base units only, so nothing needs converting. */
+  unit: z.enum(["g", "ml", "unit"]),
+  allergens: z.array(allergenSchema).optional(),
+  /** ingredients_reorder_level_positive (1800) */
+  reorder_level: z.number().min(0).optional(),
 });
 
-export const demoSchema = z.object({
-  /** demos_title_length (0500) */
-  title: z.string().trim().min(1, "Title is required").max(200),
+export const productSchema = z.object({
+  /** Same as above: unique per organization, with a cap of this layer's own. */
+  sku: z.string().trim().min(1, "A sku is required").max(60),
+  /** products_name_length (1800) */
+  name: z.string().trim().min(1, "Name is required").max(200),
   description: z.string().max(5000).optional().nullable(),
-  project_id: z.string().uuid(),
-  status: z.enum(["draft", "published", "archived"]).optional(),
-  visibility: z.enum(["private", "link", "public"]).optional(),
-  tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+  /** products_price_non_negative (1800): integer minor units, never floats. */
+  price_cents: z.number().int().min(0, "A price cannot be negative"),
+  /** products_currency_format (1800) */
+  currency: z.string().regex(/^[a-z]{3}$/, "Use a three-letter code like eur").optional(),
+  status: z.enum(["draft", "active", "discontinued"]).optional(),
+  // `allergens` is absent on purpose: it is derived from the recipe, and a
+  // member has no privilege to write it.
 });
 
-export const demoStepSchema = z.object({
-  /** demo_steps_position_positive (0500) */
-  position: z.number().int().min(0),
-  title: z.string().max(200).optional().nullable(),
-  body: z.string().max(5000).optional().nullable(),
-  asset_path: z.string().optional().nullable(),
-  hotspot: z
-    .object({
-      x: z.number().min(0).max(1),
-      y: z.number().min(0).max(1),
-      shape: z.enum(["circle", "rect"]).optional(),
-    })
-    .partial()
-    .optional(),
-  duration_ms: z.number().int().min(0).max(600_000).optional().nullable(),
+export const recipeLineSchema = z.object({
+  ingredient_id: z.string().uuid(),
+  /**
+   * product_ingredients_quantity_positive (1800). In the ingredient's own unit
+   * — there is no unit field here, because there is no unit to disagree about.
+   */
+  quantity: z.number().positive("Use a quantity greater than zero"),
 });
 
-export const commentSchema = z.object({
-  /** demo_comments_body_length (0500) */
-  body: z.string().trim().min(1, "Say something").max(5000),
-  step_id: z.string().uuid().optional().nullable(),
+export const stockMovementSchema = z
+  .object({
+    ingredient_id: z.string().uuid(),
+    kind: z.enum(["receipt", "consumption", "waste", "adjustment", "release"]),
+    /** inventory_movements_quantity_non_zero (1800) */
+    quantity: z.number(),
+    /** inventory_movements_cost_only_on_receipt (1800) */
+    unit_cost_cents: z.number().int().min(0).optional().nullable(),
+    note: z.string().max(500).optional().nullable(),
+  })
+  /** inventory_movements_sign_matches_kind (1800) */
+  .refine(
+    (m) =>
+      m.kind === "adjustment" ||
+      (["receipt", "release"].includes(m.kind) ? m.quantity > 0 : m.quantity < 0),
+    { message: "Receipts are positive, consumption and waste are negative", path: ["quantity"] },
+  )
+  .refine((m) => m.unit_cost_cents == null || m.kind === "receipt", {
+    message: "A unit cost only belongs on a receipt",
+    path: ["unit_cost_cents"],
+  });
+
+export const customerSchema = z.object({
+  /** customers_email_shape (1800) */
+  email: z.string().email("Enter a valid email address"),
+  full_name: z.string().max(200).optional().nullable(),
+  phone: z.string().max(40).optional().nullable(),
+  marketing_opt_in: z.boolean().optional(),
+  notes: z.string().max(2000).optional().nullable(),
 });
 
-export const leadCaptureSchema = z.object({
-  email: z.string().email(),
-  name: z.string().max(120).optional(),
-  fields: z.record(z.unknown()).optional(),
+export const orderSchema = z.object({
+  customer_id: z.string().uuid(),
+  /** place_order (1800) refuses an empty order. */
+  lines: z
+    .array(
+      z.object({
+        sku: z.string().trim().min(1),
+        /** order_items_quantity_positive (1800) */
+        quantity: z.number().int().positive("Order at least one"),
+      }),
+    )
+    .min(1, "An order needs at least one line"),
 });
 
 export const webhookEndpointSchema = z.object({
@@ -91,16 +152,19 @@ export const apiKeySchema = z.object({
   /** api_keys_name_length (1400) */
   name: z.string().trim().min(1).max(80),
   /** api_keys_scopes_not_empty (1400) */
-  scopes: z.array(z.string().min(1)).min(1).default(["demos:read"]),
+  scopes: z.array(z.string().min(1)).min(1).default(["products:read"]),
   expires_in_days: z.number().int().min(1).max(3650).optional(),
 });
 
 export const roleSchema = z.enum(ORG_ROLES);
 
 export type OrganizationInput = z.infer<typeof organizationSchema>;
-export type ProjectInput = z.infer<typeof projectSchema>;
-export type DemoInput = z.infer<typeof demoSchema>;
-export type DemoStepInput = z.infer<typeof demoStepSchema>;
+export type IngredientInput = z.infer<typeof ingredientSchema>;
+export type ProductInput = z.infer<typeof productSchema>;
+export type RecipeLineInput = z.infer<typeof recipeLineSchema>;
+export type StockMovementInput = z.infer<typeof stockMovementSchema>;
+export type CustomerInput = z.infer<typeof customerSchema>;
+export type OrderInput = z.infer<typeof orderSchema>;
 export type InviteInput = z.infer<typeof inviteSchema>;
 export type WebhookEndpointInput = z.infer<typeof webhookEndpointSchema>;
 export type ApiKeyInput = z.infer<typeof apiKeySchema>;

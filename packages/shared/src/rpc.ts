@@ -9,10 +9,10 @@
 
 import type { SupademoClient } from "./client.ts";
 import type {
-  DemoAnalytics,
+  AllergenRecallHit,
   Entitlements,
+  Order,
   OrganizationOverview,
-  PublicDemo,
 } from "./types.ts";
 import type { OrgRole } from "./permissions.ts";
 
@@ -89,85 +89,126 @@ export function entitlements(
   return unwrap(client.rpc("entitlements", { p_organization_id: organizationId }));
 }
 
-// --- Demos ------------------------------------------------------------------
+// --- Commerce ---------------------------------------------------------------
 
-export function searchDemos(
+export interface OrderLineInput {
+  sku: string;
+  quantity: number;
+}
+
+/**
+ * Places an order and returns it.
+ *
+ * One call does the whole thing: it resolves each sku against the active
+ * catalogue, snapshots the price and allergen list onto the line, locks the
+ * ingredients the order consumes, refuses the order if the ledger does not
+ * cover it, and writes the consumption. There is no way to do half of that
+ * from here, which is the point — the sequence is in the database, not in
+ * whichever client happens to be calling.
+ *
+ * Errors worth handling by code rather than by message:
+ *   `P0002` an unknown sku, or a customer that is not in this organization
+ *   `23514` a bad quantity, an empty order, mixed currencies, or a lapsed plan
+ *   `53000` not enough stock on hand
+ */
+export function placeOrder(
   client: SupademoClient,
-  query: string,
-  organizationId?: string,
-  limit = 20,
-) {
+  organizationId: string,
+  customerId: string,
+  lines: OrderLineInput[],
+): Promise<Order> {
   return unwrap(
-    client.rpc("search_demos", {
-      p_query: query,
-      p_organization_id: organizationId ?? null,
-      p_limit: limit,
+    client.rpc("place_order", {
+      p_organization_id: organizationId,
+      p_customer_id: customerId,
+      p_lines: lines,
     }),
   );
 }
 
-/** Works unauthenticated. Resolves to `null` when the demo is not shareable. */
-export function getPublicDemo(
+/**
+ * Cancels an order and returns stock as a `release` movement. The consumption
+ * rows are not deleted, so what happened stays on the record.
+ *
+ * Refused with `23514` on an order that is already cancelled, or fulfilled —
+ * a fulfilled order is refunded, not cancelled.
+ */
+export function cancelOrder(
   client: SupademoClient,
-  publicId: string,
-): Promise<PublicDemo | null> {
-  return unwrap(client.rpc("get_public_demo", { p_public_id: publicId }));
+  organizationId: string,
+  orderId: string,
+  reason?: string,
+): Promise<Order> {
+  return unwrap(
+    client.rpc("cancel_order", {
+      p_organization_id: organizationId,
+      p_order_id: orderId,
+      p_reason: reason ?? null,
+    }),
+  );
 }
 
-export function demoAnalytics(
+/** Resolves to `null` when the id does not belong to this organization. */
+export function getOrder(
   client: SupademoClient,
-  demoId: string,
-  since?: Date,
-): Promise<DemoAnalytics> {
+  organizationId: string,
+  orderId: string,
+): Promise<Order | null> {
   return unwrap(
-    client.rpc("demo_analytics", {
-      p_demo_id: demoId,
+    client.rpc("get_order", {
+      p_organization_id: organizationId,
+      p_order_id: orderId,
+    }),
+  );
+}
+
+/**
+ * The recall query: orders whose label omitted an allergen the product is now
+ * known to contain. Cancelled orders are excluded.
+ *
+ * This is the one query that justifies modelling ingredients separately from
+ * products at all. Correcting an ingredient relabels every product that uses
+ * it, but it cannot and must not change what a past buyer was told — so the
+ * two records disagree, and this is how that disagreement is read back.
+ */
+export function ordersMissingAllergen(
+  client: SupademoClient,
+  organizationId: string,
+  allergen: string,
+  since?: Date,
+): Promise<AllergenRecallHit[]> {
+  return unwrap(
+    client.rpc("orders_missing_allergen", {
+      p_organization_id: organizationId,
+      p_allergen: allergen,
       p_since: since?.toISOString() ?? null,
     }),
   );
 }
 
-export interface ViewPing {
-  publicId: string;
-  sessionId: string;
-  stepsViewed?: number;
-  completed?: boolean;
-  durationMs?: number;
-  referrer?: string;
+/**
+ * Stock on hand, summed from the ledger. There is no column to read instead;
+ * that is deliberate, and it means this value is always consistent with the
+ * movements that produced it.
+ */
+export function ingredientAvailable(
+  client: SupademoClient,
+  ingredientId: string,
+): Promise<number> {
+  return unwrap(client.rpc("ingredient_available", { p_ingredient_id: ingredientId }));
+}
+
+/** How many of a product the current stock could make, from its recipe. */
+export function productSellable(client: SupademoClient, productId: string): Promise<number> {
+  return unwrap(client.rpc("product_sellable", { p_product_id: productId }));
 }
 
 /**
- * Idempotent per (demo, session): call it as often as the player likes. Only
- * the first call for a session is metered.
+ * Scrubs a customer's personal details in place, keeping the row so their
+ * orders stay referentially intact. Irreversible; admin or service_role only.
  */
-export function trackDemoView(client: SupademoClient, ping: ViewPing) {
-  return unwrap(
-    client.rpc("track_demo_view", {
-      p_public_id: ping.publicId,
-      p_session_id: ping.sessionId,
-      p_steps_viewed: ping.stepsViewed ?? 0,
-      p_completed: ping.completed ?? false,
-      p_duration_ms: ping.durationMs ?? 0,
-      p_referrer: ping.referrer ?? null,
-    }),
-  );
-}
-
-export function captureLead(
-  client: SupademoClient,
-  publicId: string,
-  email: string,
-  name?: string,
-  fields: Record<string, unknown> = {},
-) {
-  return unwrap(
-    client.rpc("capture_demo_lead", {
-      p_public_id: publicId,
-      p_email: email,
-      p_name: name ?? null,
-      p_fields: fields,
-    }),
-  );
+export function anonymizeCustomer(client: SupademoClient, customerId: string) {
+  return unwrap(client.rpc("anonymize_customer", { p_customer_id: customerId }));
 }
 
 // --- Search over documents --------------------------------------------------
@@ -213,7 +254,7 @@ export function createApiKey(
   client: SupademoClient,
   organizationId: string,
   name: string,
-  scopes: string[] = ["demos:read"],
+  scopes: string[] = ["products:read"],
 ): Promise<Array<{ key_id: string; key_prefix: string; api_key: string }>> {
   return unwrap(
     client.rpc("create_api_key", {
