@@ -7,10 +7,11 @@
  * at each call site.
  */
 
+import type { Json } from "@supademo/db-types";
+
 import type { SupademoClient } from "./client.ts";
 import type {
   AllergenRecallHit,
-  Entitlements,
   Order,
   OrganizationOverview,
 } from "./types.ts";
@@ -34,7 +35,15 @@ async function unwrap<T>(promise: PromiseLike<{ data: unknown; error: unknown }>
 // --- Organizations ----------------------------------------------------------
 
 export function createOrganization(client: SupademoClient, name: string, slug?: string) {
-  return unwrap(client.rpc("create_organization", { p_name: name, p_slug: slug ?? null }));
+  // An argument with a DEFAULT comes through as optional, not nullable
+  // (`p_slug?: string`), so leaving it unset means omitting the key. Passing
+  // null would send a null and override the default.
+  return unwrap(
+    client.rpc("create_organization", {
+      p_name: name,
+      ...(slug === undefined ? {} : { p_slug: slug }),
+    }),
+  );
 }
 
 /**
@@ -82,12 +91,10 @@ export function organizationOverview(
   return unwrap(client.rpc("organization_overview", { p_organization_id: organizationId }));
 }
 
-export function entitlements(
-  client: SupademoClient,
-  organizationId: string,
-): Promise<Entitlements> {
-  return unwrap(client.rpc("entitlements", { p_organization_id: organizationId }));
-}
+// There is deliberately no `entitlements()` wrapper. `app.entitlements()` lives
+// in the `app` schema, which PostgREST does not expose and `gen types` does not
+// cover, so there is nothing for a client to call. Read them from
+// `organizationOverview(...).entitlements`, which is one round trip anyway.
 
 // --- Commerce ---------------------------------------------------------------
 
@@ -121,7 +128,10 @@ export function placeOrder(
     client.rpc("place_order", {
       p_organization_id: organizationId,
       p_customer_id: customerId,
-      p_lines: lines,
+      // A jsonb argument is typed `Json`, which an interface does not satisfy
+      // structurally (it has no index signature). The shape is checked by
+      // OrderLineInput on the way in, which is the part worth checking.
+      p_lines: lines as unknown as Json,
     }),
   );
 }
@@ -143,7 +153,7 @@ export function cancelOrder(
     client.rpc("cancel_order", {
       p_organization_id: organizationId,
       p_order_id: orderId,
-      p_reason: reason ?? null,
+      ...(reason === undefined ? {} : { p_reason: reason }),
     }),
   );
 }
@@ -181,7 +191,7 @@ export function ordersMissingAllergen(
     client.rpc("orders_missing_allergen", {
       p_organization_id: organizationId,
       p_allergen: allergen,
-      p_since: since?.toISOString() ?? null,
+      ...(since === undefined ? {} : { p_since: since.toISOString() }),
     }),
   );
 }
@@ -234,7 +244,9 @@ export function hybridSearch(
 // --- Notifications and account ---------------------------------------------
 
 export function markNotificationsRead(client: SupademoClient, ids?: string[]) {
-  return unwrap(client.rpc("mark_notifications_read", { p_ids: ids ?? null }));
+  return unwrap(
+    client.rpc("mark_notifications_read", ids === undefined ? {} : { p_ids: ids }),
+  );
 }
 
 export function myAuthEvents(client: SupademoClient, limit = 50) {

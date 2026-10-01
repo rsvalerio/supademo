@@ -64,19 +64,6 @@ jobs:
           if ! git diff --quiet -- packages/db-types/src/database.types.ts; then
             echo "::error::packages/db-types is stale. Run 'npm run gen:types' and commit."
             git diff --stat -- packages/db-types/src/database.types.ts
-
-            # TEMPORARY, remove with bootstrap-types.yml. The file above is the
-            # only copy of the real generated output anywhere, and it dies with
-            # this runner. Emitting it gzipped and base64-wrapped makes it
-            # recoverable from the log by whoever cannot boot a stack locally,
-            # which is the same gap bootstrap-types.yml exists to close — this
-            # route just does not need `contents: write`. The sha256 is of the
-            # raw file, so a recovered copy can be checked rather than trusted.
-            echo "TYPES_SHA256 $(sha256sum packages/db-types/src/database.types.ts | cut -d' ' -f1)"
-            echo "TYPES_GZ_B64_BEGIN"
-            gzip -9 -c packages/db-types/src/database.types.ts | base64 -w 200
-            echo "TYPES_GZ_B64_END"
-
             exit 1
           fi
 
