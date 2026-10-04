@@ -19,7 +19,11 @@ const MAX_CHUNK_CHARS = 1200;
 const CHUNK_OVERLAP_CHARS = 150;
 
 declare const Supabase: {
-  ai: { Session: new (model: string) => { run(input: string, opts: Record<string, unknown>): Promise<number[]> } };
+  ai: {
+    Session: new (
+      model: string,
+    ) => { run(input: string, opts: Record<string, unknown>): Promise<number[]> };
+  };
 };
 
 interface Body {

@@ -7,12 +7,13 @@
  * at each call site.
  */
 
+import type { Json } from "@supademo/db-types";
+
 import type { SupademoClient } from "./client.ts";
 import type {
-  DemoAnalytics,
-  Entitlements,
+  AllergenRecallHit,
+  Order,
   OrganizationOverview,
-  PublicDemo,
 } from "./types.ts";
 import type { OrgRole } from "./permissions.ts";
 
@@ -34,7 +35,15 @@ async function unwrap<T>(promise: PromiseLike<{ data: unknown; error: unknown }>
 // --- Organizations ----------------------------------------------------------
 
 export function createOrganization(client: SupademoClient, name: string, slug?: string) {
-  return unwrap(client.rpc("create_organization", { p_name: name, p_slug: slug ?? null }));
+  // An argument with a DEFAULT comes through as optional, not nullable
+  // (`p_slug?: string`), so leaving it unset means omitting the key. Passing
+  // null would send a null and override the default.
+  return unwrap(
+    client.rpc("create_organization", {
+      p_name: name,
+      ...(slug === undefined ? {} : { p_slug: slug }),
+    }),
+  );
 }
 
 /**
@@ -82,92 +91,134 @@ export function organizationOverview(
   return unwrap(client.rpc("organization_overview", { p_organization_id: organizationId }));
 }
 
-export function entitlements(
-  client: SupademoClient,
-  organizationId: string,
-): Promise<Entitlements> {
-  return unwrap(client.rpc("entitlements", { p_organization_id: organizationId }));
-}
+// There is deliberately no `entitlements()` wrapper. `app.entitlements()` lives
+// in the `app` schema, which PostgREST does not expose and `gen types` does not
+// cover, so there is nothing for a client to call. Read them from
+// `organizationOverview(...).entitlements`, which is one round trip anyway.
 
-// --- Demos ------------------------------------------------------------------
+// --- Commerce ---------------------------------------------------------------
 
-export function searchDemos(
-  client: SupademoClient,
-  query: string,
-  organizationId?: string,
-  limit = 20,
-) {
-  return unwrap(
-    client.rpc("search_demos", {
-      p_query: query,
-      p_organization_id: organizationId ?? null,
-      p_limit: limit,
-    }),
-  );
-}
-
-/** Works unauthenticated. Resolves to `null` when the demo is not shareable. */
-export function getPublicDemo(
-  client: SupademoClient,
-  publicId: string,
-): Promise<PublicDemo | null> {
-  return unwrap(client.rpc("get_public_demo", { p_public_id: publicId }));
-}
-
-export function demoAnalytics(
-  client: SupademoClient,
-  demoId: string,
-  since?: Date,
-): Promise<DemoAnalytics> {
-  return unwrap(
-    client.rpc("demo_analytics", {
-      p_demo_id: demoId,
-      p_since: since?.toISOString() ?? null,
-    }),
-  );
-}
-
-export interface ViewPing {
-  publicId: string;
-  sessionId: string;
-  stepsViewed?: number;
-  completed?: boolean;
-  durationMs?: number;
-  referrer?: string;
+export interface OrderLineInput {
+  sku: string;
+  quantity: number;
 }
 
 /**
- * Idempotent per (demo, session): call it as often as the player likes. Only
- * the first call for a session is metered.
+ * Places an order and returns it.
+ *
+ * One call does the whole thing: it resolves each sku against the active
+ * catalogue, snapshots the price and allergen list onto the line, locks the
+ * ingredients the order consumes, refuses the order if the ledger does not
+ * cover it, and writes the consumption. There is no way to do half of that
+ * from here, which is the point — the sequence is in the database, not in
+ * whichever client happens to be calling.
+ *
+ * Errors worth handling by code rather than by message:
+ *   `P0002` an unknown sku, or a customer that is not in this organization
+ *   `23514` a bad quantity, an empty order, mixed currencies, or a lapsed plan
+ *   `53000` not enough stock on hand
  */
-export function trackDemoView(client: SupademoClient, ping: ViewPing) {
+export function placeOrder(
+  client: SupademoClient,
+  organizationId: string,
+  customerId: string,
+  lines: OrderLineInput[],
+): Promise<Order> {
   return unwrap(
-    client.rpc("track_demo_view", {
-      p_public_id: ping.publicId,
-      p_session_id: ping.sessionId,
-      p_steps_viewed: ping.stepsViewed ?? 0,
-      p_completed: ping.completed ?? false,
-      p_duration_ms: ping.durationMs ?? 0,
-      p_referrer: ping.referrer ?? null,
+    client.rpc("place_order", {
+      p_organization_id: organizationId,
+      p_customer_id: customerId,
+      // A jsonb argument is typed `Json`, which an interface does not satisfy
+      // structurally (it has no index signature). The shape is checked by
+      // OrderLineInput on the way in, which is the part worth checking.
+      p_lines: lines as unknown as Json,
     }),
   );
 }
 
-export function captureLead(
+/**
+ * Cancels an order and returns stock as a `release` movement. The consumption
+ * rows are not deleted, so what happened stays on the record.
+ *
+ * Refused with `23514` on an order that is already cancelled, or fulfilled —
+ * a fulfilled order is refunded, not cancelled.
+ */
+export function cancelOrder(
   client: SupademoClient,
-  publicId: string,
-  email: string,
-  name?: string,
-  fields: Record<string, unknown> = {},
-) {
+  organizationId: string,
+  orderId: string,
+  reason?: string,
+): Promise<Order> {
   return unwrap(
-    client.rpc("capture_demo_lead", {
-      p_public_id: publicId,
-      p_email: email,
-      p_name: name ?? null,
-      p_fields: fields,
+    client.rpc("cancel_order", {
+      p_organization_id: organizationId,
+      p_order_id: orderId,
+      ...(reason === undefined ? {} : { p_reason: reason }),
     }),
   );
+}
+
+/** Resolves to `null` when the id does not belong to this organization. */
+export function getOrder(
+  client: SupademoClient,
+  organizationId: string,
+  orderId: string,
+): Promise<Order | null> {
+  return unwrap(
+    client.rpc("get_order", {
+      p_organization_id: organizationId,
+      p_order_id: orderId,
+    }),
+  );
+}
+
+/**
+ * The recall query: orders whose label omitted an allergen the product is now
+ * known to contain. Cancelled orders are excluded.
+ *
+ * This is the one query that justifies modelling ingredients separately from
+ * products at all. Correcting an ingredient relabels every product that uses
+ * it, but it cannot and must not change what a past buyer was told — so the
+ * two records disagree, and this is how that disagreement is read back.
+ */
+export function ordersMissingAllergen(
+  client: SupademoClient,
+  organizationId: string,
+  allergen: string,
+  since?: Date,
+): Promise<AllergenRecallHit[]> {
+  return unwrap(
+    client.rpc("orders_missing_allergen", {
+      p_organization_id: organizationId,
+      p_allergen: allergen,
+      ...(since === undefined ? {} : { p_since: since.toISOString() }),
+    }),
+  );
+}
+
+/**
+ * Stock on hand, summed from the ledger. There is no column to read instead;
+ * that is deliberate, and it means this value is always consistent with the
+ * movements that produced it.
+ */
+export function ingredientAvailable(
+  client: SupademoClient,
+  ingredientId: string,
+): Promise<number> {
+  return unwrap(client.rpc("ingredient_available", { p_ingredient_id: ingredientId }));
+}
+
+/** How many of a product the current stock could make, from its recipe. */
+export function productSellable(client: SupademoClient, productId: string): Promise<number> {
+  return unwrap(client.rpc("product_sellable", { p_product_id: productId }));
+}
+
+/**
+ * Scrubs a customer's personal details in place, keeping the row so their
+ * orders stay referentially intact. Irreversible; admin or service_role only.
+ */
+export function anonymizeCustomer(client: SupademoClient, customerId: string) {
+  return unwrap(client.rpc("anonymize_customer", { p_customer_id: customerId }));
 }
 
 // --- Search over documents --------------------------------------------------
@@ -193,7 +244,9 @@ export function hybridSearch(
 // --- Notifications and account ---------------------------------------------
 
 export function markNotificationsRead(client: SupademoClient, ids?: string[]) {
-  return unwrap(client.rpc("mark_notifications_read", { p_ids: ids ?? null }));
+  return unwrap(
+    client.rpc("mark_notifications_read", ids === undefined ? {} : { p_ids: ids }),
+  );
 }
 
 export function myAuthEvents(client: SupademoClient, limit = 50) {
@@ -213,7 +266,7 @@ export function createApiKey(
   client: SupademoClient,
   organizationId: string,
   name: string,
-  scopes: string[] = ["demos:read"],
+  scopes: string[] = ["products:read"],
 ): Promise<Array<{ key_id: string; key_prefix: string; api_key: string }>> {
   return unwrap(
     client.rpc("create_api_key", {

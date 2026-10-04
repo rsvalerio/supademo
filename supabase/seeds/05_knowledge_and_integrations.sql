@@ -16,16 +16,17 @@
 insert into public.documents (id, organization_id, source_type, title, content, created_by)
 values
   ('00000000-0000-4000-f000-000000000001', '00000000-0000-4000-b000-000000000001',
-   'help_article', 'Sharing a demo',
-   'Demos can be private, shared by link, or published publicly. A link-shared demo '
-   'is reachable by anyone holding its share id, but never appears in listings. '
-   'Publishing makes a demo appear in the public directory and lets search engines index it.',
+   'help_article', 'How allergen labelling works',
+   'A product does not carry its own allergen list: it inherits one from its recipe. '
+   'Correcting an ingredient relabels every product that uses it, immediately. '
+   'Orders already placed keep the list the buyer was shown, so the two can be compared '
+   'to find out who needs to be contacted after a correction.',
    '00000000-0000-4000-a000-000000000001'),
   ('00000000-0000-4000-f000-000000000002', '00000000-0000-4000-b000-000000000001',
    'help_article', 'Understanding plan limits',
-   'Every plan caps the number of demos, projects and members. Reaching a cap does not '
+   'Every plan caps the number of products and members. Reaching a cap does not '
    'delete anything: it stops new items being created until you upgrade or remove '
-   'something. Views are metered monthly and reset with the billing period.',
+   'something. Orders are metered monthly and reset with the billing period.',
    '00000000-0000-4000-a000-000000000001')
 on conflict (id) do nothing;
 
@@ -42,7 +43,7 @@ values (
   '00000000-0000-4000-b000-000000000001',
   'https://example.test/hooks/supademo',
   'Example receiver. Deliveries will fail locally, which is what makes the retry path visible.',
-  array['demo.published'],
+  array['order.confirmed', 'order.cancelled'],
   '00000000-0000-4000-a000-000000000001'
 )
 on conflict do nothing;

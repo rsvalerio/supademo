@@ -6,8 +6,15 @@
 
 import type { OrgRole } from "./permissions.ts";
 
-export type DemoStatus = "draft" | "published" | "archived";
-export type DemoVisibility = "private" | "link" | "public";
+export type UnitOfMeasure = "g" | "ml" | "unit";
+export type ProductStatus = "draft" | "active" | "discontinued";
+export type OrderStatus = "pending" | "confirmed" | "fulfilled" | "cancelled";
+export type StockMovementKind =
+  | "receipt"
+  | "consumption"
+  | "waste"
+  | "adjustment"
+  | "release";
 export type SubscriptionStatus =
   | "trialing"
   | "active"
@@ -59,52 +66,70 @@ export interface OrganizationOverview {
   role: OrgRole;
   entitlements: Entitlements;
   counts: {
-    projects: number;
-    demos: number;
+    products: number;
+    ingredients: number;
+    customers: number;
+    orders_this_month: number;
     members: number;
     pending_invites: number;
   };
   usage_this_month: Record<string, number>;
 }
 
-/** Shape returned by `public.get_public_demo(text)`. */
-export interface PublicDemo {
+/**
+ * Shape returned by `public.get_order(uuid, uuid)`, and therefore by
+ * `place_order` and `cancel_order`, which both return it.
+ *
+ * Note what the lines carry: the sku, name, price and allergen list as they
+ * were when the order was placed, not as they are now. Rendering a past order
+ * must use these and never re-read the product, or the receipt will quietly
+ * change the next time something is repriced or relabelled.
+ */
+export interface Order {
   id: string;
-  public_id: string;
-  title: string;
-  description: string | null;
-  cover_path: string | null;
-  theme: Record<string, unknown>;
-  tags: string[];
-  published_at: string | null;
-  organization: { name: string; logo_path: string | null };
-  steps: PublicDemoStep[];
+  order_number: string;
+  status: OrderStatus;
+  currency: string;
+  total_cents: number;
+  placed_at: string;
+  customer: { id: string; email: string; name: string | null };
+  items: OrderLine[];
 }
 
-export interface PublicDemoStep {
-  id: string;
-  position: number;
-  title: string | null;
-  body: string | null;
-  asset_path: string | null;
-  /** Added by the `public-demo` edge function; absent when read via the RPC directly. */
-  asset_url?: string | null;
-  hotspot: { x?: number; y?: number; shape?: "circle" | "rect" };
-  duration_ms: number | null;
+export interface OrderLine {
+  sku: string;
+  name: string;
+  quantity: number;
+  unit_price_cents: number;
+  line_total_cents: number;
+  /** What the buyer was told, frozen at the moment of sale. */
+  allergens: string[];
 }
 
-/** Shape returned by `public.demo_analytics(uuid, timestamptz)`. */
-export interface DemoAnalytics {
-  views: number;
-  unique_sessions: number;
-  completions: number;
-  completion_rate: number;
-  avg_duration_ms: number;
-  by_day: Array<{ day: string; views: number }>;
+/**
+ * One row of `public.orders_missing_allergen(uuid, text, timestamptz)`: an
+ * order whose label omitted an allergen the product is now known to contain.
+ * This is a recall list — every entry is someone to contact.
+ */
+export interface AllergenRecallHit {
+  order_number: string;
+  placed_at: string;
+  status: OrderStatus;
+  customer_email: string;
+  sku: string;
+  product_name: string;
+  quantity: number;
+  /** What was disclosed at the time, which is why this row is a hit. */
+  disclosed: string[];
 }
 
 /** Events an organization can subscribe a webhook endpoint to. */
-export const WEBHOOK_EVENTS = ["demo.published", "*"] as const;
+export const WEBHOOK_EVENTS = [
+  "order.confirmed",
+  "order.fulfilled",
+  "order.cancelled",
+  "*",
+] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export function isUnlimited(limit: number | undefined): boolean {

@@ -275,7 +275,7 @@ than piling into one file:
 ```
 supabase/seeds/01_users.sql
 supabase/seeds/02_organizations.sql
-supabase/seeds/03_projects_and_demos.sql
+supabase/seeds/03_catalog.sql
 supabase/seeds/04_traffic.sql
 supabase/seeds/05_knowledge_and_integrations.sql
 ```
